@@ -49,8 +49,6 @@ function init() {
     // Cria o tocador de som
     fireSound = new THREE.Audio(listener);
     const audioLoader = new THREE.AudioLoader();
-    
-    // Troque './assets/tiro.mp3' para o nome e local do seu arquivo de som
     audioLoader.load('./assets/tiro.mp3', (buffer) => {
         fireSound.setBuffer(buffer);
         fireSound.setVolume(0.5);
@@ -67,8 +65,6 @@ function init() {
     scene.add(new THREE.AmbientLight(0xffffff, 1.5));
 
     const textureLoader = new THREE.TextureLoader();
-    
-    // Altere os caminhos para o nome exato dos arquivos que você baixou
     const colorMap = textureLoader.load('./assets/1K/Poliigon_GrassPatchyGround_4585_BaseColor.jpg'); 
     const normalMap = textureLoader.load('./assets/1K/Poliigon_GrassPatchyGround_4585_Normal.png');
     const roughnessMap = textureLoader.load('./assets/1K/Poliigon_GrassPatchyGround_4585_Normal.png');
@@ -78,14 +74,14 @@ function init() {
     [colorMap, normalMap, roughnessMap, aoMap].forEach(tex => {
         tex.wrapS = THREE.RepeatWrapping;
         tex.wrapT = THREE.RepeatWrapping;
-        tex.repeat.set(200, 200); // Ajuste o tamanho do ladrilho da grama
+        tex.repeat.set(200, 200); // Ajusta o tamanho do ladrilho da grama
     });
     
     colorMap.colorSpace = THREE.SRGBColorSpace;
 
     const ground = new THREE.Mesh(
         new THREE.PlaneGeometry(2000, 2000),
-        new THREE.MeshStandardMaterial({ 
+        new THREE.MeshStandardMaterial({
             map: colorMap,
             normalMap: normalMap,
             roughnessMap: roughnessMap,
@@ -316,11 +312,19 @@ document.addEventListener('click', (e) => {
 });
 
 document.addEventListener('mousemove', (e) => {
-    if (e.target.closest('.lil-gui')) return;
-    if (document.pointerLockElement === renderer.domElement && cameraTarget === "pistol") {
-        yaw -= e.movementX * sensitivity;
+    if (document.pointerLockElement === renderer.domElement && cameraTarget === "pistol" && !isFiring) {
+        
         pitch -= e.movementY * sensitivity;
-        pitch = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, pitch));
+        
+        // ==========================================
+        // A NOVA TRAVA: Exatamente 45 graus (em radianos)
+        const limiteRadianosmin = 60 * (Math.PI / 180);
+        const limiteRadianosmax = 20 * (Math.PI / 180); // Converte 45° para radianos
+        pitch = Math.max(-limiteRadianosmax, Math.min(limiteRadianosmin, pitch));
+        // ==========================================
+        
+        // Pega o radiano da arma, transforma em graus e injeta no painel
+        config.angle = parseFloat((pitch * (180 / Math.PI)).toFixed(1));
     }
 });
 
@@ -410,3 +414,46 @@ iniciarInterface(config, world, (modo) => {
         cameraTarget = "pistol";
     }
 });
+
+window.forcarResetDaCena = function() {
+    // 1. Cancela timers pendentes
+    if (window.returnTimer) { 
+        clearTimeout(window.returnTimer); 
+        window.returnTimer = null; 
+    }
+
+    // 2. Reseta o estado interno
+    isFiring = false;
+    hasBounced = false;
+    cameraTarget = "pistol"; 
+
+    // 3. Resgata a arma
+    if (typeof pistol !== 'undefined' && pistol && camera) {
+        camera.attach(pistol); 
+        pistol.position.set(2, -4, -2); 
+        pistol.rotation.set(0, 0, 0); 
+    }
+
+    // 4. Limpa a bala física
+    if (typeof projectileBody !== 'undefined' && projectileBody && projectile) {
+        projectileBody.sleep();
+        projectileBody.position.set(0, -100, 0); 
+        projectileBody.velocity.set(0, 0, 0);
+        projectileBody.angularVelocity.set(0, 0, 0);
+        projectile.visible = false;
+    }
+
+    // 5. Centraliza a visão
+    if (camera) {
+        camera.position.set(config.startX, config.startY, 10);
+        pitch = 0; 
+    }
+};
+
+// Função para a interface inclinar a arma
+window.atualizarPitchPelaInterface = function(anguloEmGraus) {
+    if (!isFiring) { // Só permite mexer se não tiver atirado ainda
+        // Converte os graus do painel (ex: 45) para radianos, que é o que o Three.js usa
+        pitch = anguloEmGraus * (Math.PI / 180); 
+    }
+};
