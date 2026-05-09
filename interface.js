@@ -52,6 +52,7 @@ export function iniciarInterface(config, world, setCameraModo) {
         window.atualizarPitchPelaInterface(val);
     }
 }).listen();
+    pastaFisica.add(config, 'angle', -20, 60).name('Ângulo (°)');
     
     // Adicionamos o .onChange na gravidade para atualizar o mundo físico na hora
     pastaFisica.add(config, 'gravity', 0, 20).name('Gravidade (m/s²)').step(0.1).onChange(v => {
