@@ -4,7 +4,9 @@ import { GLTFLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders
 import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
 import { iniciarInterface } from './interface.js';
 import { Sky } from 'https://unpkg.com/three@0.160.0/examples/jsm/objects/Sky.js';
-import * as CANNON from 'cannon-es5';
+
+// CANNON.js é carregado como global via script tag no HTML
+const CANNON = window.CANNON;
 
 
 // ─── Variáveis Globais ────────────────────────────────────────────────────────
