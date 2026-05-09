@@ -4,6 +4,8 @@ import { GLTFLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders
 import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
 import { iniciarInterface } from './interface.js';
 import { Sky } from 'https://unpkg.com/three@0.160.0/examples/jsm/objects/Sky.js';
+import * as CANNON from 'cannon-es5';
+
 
 // ─── Variáveis Globais ────────────────────────────────────────────────────────
 let scene, camera, renderer;
@@ -23,6 +25,10 @@ let pitch = 0;
 const sensitivity = 0.002;
 const clock = new THREE.Clock();
 
+// Variáveis de Física (Cannon.js)
+let world;
+let projectileBody;
+
 // ─── Configuração da Simulação ────────────────────────────────────────────────
 const config = {
     v0: 100,
@@ -33,15 +39,15 @@ const config = {
     startY: 5,
 };
 
-// ─── Sistema de Física Matemática (sem Cannon.js) ─────────────────────────────
-const bulletState = {
-    active: false,
-    position: new THREE.Vector3(),
-    velocity: new THREE.Vector3(),
-    time: 0,
-    bounced: false,
-    bounceCount: 0,
-};
+// ─── Sistema de Física Matemática (DESCONTINUADO - Usando Cannon.js) ─────────
+// const bulletState = {
+//     active: false,
+//     position: new THREE.Vector3(),
+//     velocity: new THREE.Vector3(),
+//     time: 0,
+//     bounced: false,
+//     bounceCount: 0,
+// };
 
 // ─── Sistema de Chunks (Grade 2D Infinita) ────────────────────────────────────
 const CHUNK_SIZE  = 100; // Tamanho do bloco
@@ -203,14 +209,31 @@ function updateChunks() {
     }
 }
 
-// ─── FÍSICA MATEMÁTICA DA BALA ────────────────────────────────────────────────
+// ─── FÍSICA DO PROJÉTIL COM CANNON.JS ─────────────────────────────────────────
 function fireBullet(spawnPos, direction) {
-    bulletState.active   = true;
-    bulletState.bounced  = false;
-    bulletState.bounceCount = 0;
-    bulletState.time     = 0;
-    bulletState.position.copy(spawnPos);
-    bulletState.velocity.copy(direction).multiplyScalar(config.v0);
+    // Cria o corpo físico do projétil
+    const bulletShape = new CANNON.Sphere(0.3);
+    projectileBody = new CANNON.Body({
+        shape: bulletShape,
+        mass: 0.01, // A bala é leve
+        restitution: 0.6, // Ricochete
+        friction: 0.3,
+        linearDamping: 0.05,
+        angularDamping: 0.3,
+    });
+
+    projectileBody.position.set(spawnPos.x, spawnPos.y, spawnPos.z);
+
+    // Velocidade do projétil
+    const velocity = direction.clone().multiplyScalar(config.v0);
+    projectileBody.velocity.set(velocity.x, velocity.y, velocity.z);
+
+    // Rotação horizontal leve ao atirar
+    const rotationAxis = new CANNON.Vec3(0, 1, 0);
+    const rotationSpeed = 8; // radianos/segundo
+    projectileBody.angularVelocity.set(0, rotationSpeed, 0);
+
+    world.addBody(projectileBody);
 
     hasBounced = false;
     projectile.visible = true;
@@ -218,59 +241,57 @@ function fireBullet(spawnPos, direction) {
 }
 
 function updateBullet(delta) {
-    if (!bulletState.active || !projectile) return;
+    if (!projectileBody || !projectile) return;
 
-    bulletState.time += delta;
-    bulletState.velocity.y -= config.gravity * delta;
-    bulletState.velocity.x += config.wind * delta;
-    bulletState.position.addScaledVector(bulletState.velocity, delta);
+    // Sincroniza posição da meshcom o corpo físico
+    projectile.position.copy(projectileBody.position);
 
-    if (bulletState.position.y <= 0) {
-        bulletState.position.y = 0;
+    // Sincroniza rotação
+    const quaternion = new THREE.Quaternion(
+        projectileBody.quaternion.x,
+        projectileBody.quaternion.y,
+        projectileBody.quaternion.z,
+        projectileBody.quaternion.w
+    );
+    projectile.quaternion.copy(quaternion);
 
-        if (!hasBounced) {
-            hasBounced = true;
-            bulletState.bounced = true;
-        }
-
-        const restitution = 0.45;
-        const friction    = 0.92;
-
-        bulletState.velocity.y    = Math.abs(bulletState.velocity.y) * restitution;
-        bulletState.velocity.x   *= friction;
-        bulletState.velocity.z   *= friction;
-        bulletState.bounceCount++;
-
-        if (bulletState.velocity.y < 0.5 && bulletState.bounceCount > 2) {
-            bulletState.velocity.set(0, 0, 0);
-            bulletState.active = false;
-
-            setTimeout(() => {
-                isFiring = false;
-                cameraTarget = "pistol";
-                camera.attach(pistol);
-                pistol.position.set(2, -4, -2);
-                pistol.rotation.set(0, 0, 0);
-            }, 1000);
-        }
+    // Detecta se caiu no chão e parou
+    if (projectileBody.position.y <= 0.5 && !hasBounced) {
+        hasBounced = true;
     }
 
-    projectile.position.copy(bulletState.position);
+    // Para o projectile quando perde velocidade
+    const velocityMagnitude = projectileBody.velocity.length();
+    if (velocityMagnitude < 0.5 && hasBounced) {
+        projectileBody.velocity.set(0, 0, 0);
+        projectileBody.angularVelocity.set(0, 0, 0);
+        world.removeBody(projectileBody);
+        projectile.visible = false;
 
-    if (bulletState.velocity.lengthSq() > 0.01) {
-        const tempLooker = new THREE.Object3D();
-        tempLooker.position.copy(bulletState.position);
-        tempLooker.lookAt(bulletState.position.clone().add(bulletState.velocity));
-        tempLooker.rotateY(-Math.PI / 2);
-        projectile.quaternion.copy(tempLooker.quaternion);
+        setTimeout(() => {
+            isFiring = false;
+            cameraTarget = "pistol";
+            camera.attach(pistol);
+            pistol.position.set(2, -4, -2);
+            pistol.rotation.set(0, 0, 0);
+        }, 1000);
     }
 }
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 // ─── INIT ─────────────────────────────────────────────────────────────────────
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+// ─── INIT ─────────────────────────────────────────────────────────────────────
 async function init() {
     scene = new THREE.Scene();
+
+    // ─── MUNDO DE FÍSICA (Cannon.js) ───────────────────────────────────────
+    world = new CANNON.World();
+    world.gravity.set(0, -config.gravity, 0);
+    world.defaultContactMaterial.friction = 0.4;
+    world.defaultContactMaterial.restitution = 0.3;
 
     // ─── NOVO CÉU E SOL PROCEDURAL ────────────────────────────────────────
     const sky = new Sky();
@@ -445,8 +466,11 @@ function animate() {
     requestAnimationFrame(animate);
     const delta = clock.getDelta();
 
+    // Atualiza a física
+    if (world) world.step(1 / 60, delta, 3);
+
     if (mixer) mixer.update(delta);
-    
+
     updateBullet(delta);
     updateChunks();
 
@@ -546,36 +570,34 @@ iniciarInterface(config, null, (modo) => {
 
 window.forcarResetDaCena = function() {
     // 1. Cancela timers pendentes
-    if (window.returnTimer) { 
-        clearTimeout(window.returnTimer); 
-        window.returnTimer = null; 
+    if (window.returnTimer) {
+        clearTimeout(window.returnTimer);
+        window.returnTimer = null;
     }
 
     // 2. Reseta o estado interno
     isFiring = false;
     hasBounced = false;
-    cameraTarget = "pistol"; 
+    cameraTarget = "pistol";
 
     // 3. Resgata a arma
     if (typeof pistol !== 'undefined' && pistol && camera) {
-        camera.attach(pistol); 
-        pistol.position.set(2, -4, -2); 
-        pistol.rotation.set(0, 0, 0); 
+        camera.attach(pistol);
+        pistol.position.set(2, -4, -2);
+        pistol.rotation.set(0, 0, 0);
     }
 
-    // 4. Limpa a bala física
-    if (typeof projectileBody !== 'undefined' && projectileBody && projectile) {
-        projectileBody.sleep();
-        projectileBody.position.set(0, -100, 0); 
-        projectileBody.velocity.set(0, 0, 0);
-        projectileBody.angularVelocity.set(0, 0, 0);
+    // 4. Limpa a bala física (Cannon.js)
+    if (typeof projectileBody !== 'undefined' && projectileBody && world) {
+        world.removeBody(projectileBody);
+        projectileBody = null;
         projectile.visible = false;
     }
 
     // 5. Centraliza a visão
     if (camera) {
         camera.position.set(config.startX, config.startY, 10);
-        pitch = 0; 
+        pitch = 0;
     }
 };
 
