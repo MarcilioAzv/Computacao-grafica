@@ -5,6 +5,7 @@ import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/cont
 import { iniciarInterface } from './interface.js';
 import { Sky } from 'https://unpkg.com/three@0.160.0/examples/jsm/objects/Sky.js';
 
+
 // ─── Variáveis Globais ────────────────────────────────────────────────────────
 let scene, camera, renderer;
 let projectile;
