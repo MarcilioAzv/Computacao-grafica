@@ -3,6 +3,7 @@ import { OBJLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/
 import * as CANNON from 'https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js';
 import { GLTFLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
 import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+import { iniciarInterface } from './interface.js';
 
 // ─── Variáveis Globais ────────────────────────────────────────────────────────
 let scene, camera, renderer;
@@ -309,11 +310,13 @@ function animate() {
 
 // ─── EVENTOS DE CONTROLE ─────────────────────────────────────────────────────
 
-document.addEventListener('click', () => {
+document.addEventListener('click', (e) => {
+    if (e.target.closest('.lil-gui')) return;
     if (cameraTarget === "pistol") renderer.domElement.requestPointerLock();
 });
 
 document.addEventListener('mousemove', (e) => {
+    if (e.target.closest('.lil-gui')) return;
     if (document.pointerLockElement === renderer.domElement && cameraTarget === "pistol") {
         yaw -= e.movementX * sensitivity;
         pitch -= e.movementY * sensitivity;
@@ -322,6 +325,7 @@ document.addEventListener('mousemove', (e) => {
 });
 
 window.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.lil-gui')) return;
     if (document.pointerLockElement !== renderer.domElement) {
         renderer.domElement.requestPointerLock();
         return;
@@ -397,3 +401,12 @@ window.addEventListener('resize', () => {
 });
 
 init();
+
+iniciarInterface(config, world, (modo) => {
+    if (modo === 'LIVRE') {
+        cameraTarget = "none";
+        document.exitPointerLock();
+    } else {
+        cameraTarget = "pistol";
+    }
+});
