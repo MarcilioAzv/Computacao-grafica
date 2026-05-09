@@ -339,7 +339,6 @@ async function init() {
 
     loadPistol();
     loadProjectile();
-
     animate();
 }
 
@@ -481,10 +480,11 @@ document.addEventListener('click', (e) => {
 
 document.addEventListener('mousemove', (e) => {
     if (e.target.closest('.lil-gui')) return;
-    if (document.pointerLockElement === renderer.domElement && cameraTarget === "pistol") {
+    if (document.pointerLockElement === renderer.domElement && cameraTarget === "pistol" && !isFiring) {
         yaw   -= e.movementX * sensitivity;
         pitch -= e.movementY * sensitivity;
         pitch  = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, pitch));
+        config.angle = parseFloat((pitch * (180 / Math.PI)).toFixed(1));
     }
 });
 
@@ -543,3 +543,46 @@ iniciarInterface(config, null, (modo) => {
         cameraTarget = "pistol";
     }
 });
+
+window.forcarResetDaCena = function() {
+    // 1. Cancela timers pendentes
+    if (window.returnTimer) { 
+        clearTimeout(window.returnTimer); 
+        window.returnTimer = null; 
+    }
+
+    // 2. Reseta o estado interno
+    isFiring = false;
+    hasBounced = false;
+    cameraTarget = "pistol"; 
+
+    // 3. Resgata a arma
+    if (typeof pistol !== 'undefined' && pistol && camera) {
+        camera.attach(pistol); 
+        pistol.position.set(2, -4, -2); 
+        pistol.rotation.set(0, 0, 0); 
+    }
+
+    // 4. Limpa a bala física
+    if (typeof projectileBody !== 'undefined' && projectileBody && projectile) {
+        projectileBody.sleep();
+        projectileBody.position.set(0, -100, 0); 
+        projectileBody.velocity.set(0, 0, 0);
+        projectileBody.angularVelocity.set(0, 0, 0);
+        projectile.visible = false;
+    }
+
+    // 5. Centraliza a visão
+    if (camera) {
+        camera.position.set(config.startX, config.startY, 10);
+        pitch = 0; 
+    }
+};
+
+// Função para a interface inclinar a arma
+window.atualizarPitchPelaInterface = function(anguloEmGraus) {
+    if (!isFiring) { // Só permite mexer se não tiver atirado ainda
+        // Converte os graus do painel (ex: 45) para radianos, que é o que o Three.js usa
+        pitch = anguloEmGraus * (Math.PI / 180); 
+    }
+};

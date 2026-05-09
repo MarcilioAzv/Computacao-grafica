@@ -46,7 +46,12 @@ export function iniciarInterface(config, world, setCameraModo) {
     const pastaFisica = gui.addFolder('Cinemática');
     
     pastaFisica.add(config, 'v0', 10, 500).name('Velocidade (m/s)').step(1);
-    pastaFisica.add(config, 'angle', -45, 45).name('Ângulo (°)');
+    pastaFisica.add(config, 'angle', -20, 60).name('Ângulo (°)').onChange(val => {
+    // Quando você mexe no slider, ele chama a função do main.js
+    if (typeof window.atualizarPitchPelaInterface === 'function') {
+        window.atualizarPitchPelaInterface(val);
+    }
+}).listen();
     
     // Adicionamos o .onChange na gravidade para atualizar o mundo físico na hora
     pastaFisica.add(config, 'gravity', 0, 20).name('Gravidade (m/s²)').step(0.1).onChange(v => {
@@ -74,30 +79,38 @@ export function iniciarInterface(config, world, setCameraModo) {
     pastaVisual.add(extras, 'mostrarTrajetoria').name('Mostrar Trajetória');
 
     const acoes = {
-        resetar: function() {
-            config.v0 = 100;
-            config.angle = 0;
-            config.gravity = 9.81;
-            config.wind = 0;
+    resetar: function() {
+        config.v0 = 100;
+        config.angle = 0;
+        config.gravity = 9.81;
+        config.wind = 0;
 
-            extras.tipoProjetil = 'Bala';
-            extras.corRastro = '#ffffff';
-            extras.mostrarTrajetoria = true;
-            extras.modoCamera = 'FPS';
+        extras.tipoProjetil = 'Bala';
+        extras.corRastro = '#ffffff';
+        extras.mostrarTrajetoria = true;
+        extras.modoCamera = 'FPS';
 
-            if(world) world.gravity.set(0, -9.81, 0);
-            
-            setCameraModo('FPS');
+        if(typeof world !== 'undefined' && world) world.gravity.set(0, -9.81, 0);
+        
+        // Se a função setCameraModo existir no seu código, pode manter:
+        if(typeof setCameraModo === 'function') setCameraModo('FPS');
 
-            gui.folders.forEach(folder => {
-                folder.controllers.forEach(c => c.updateDisplay());
-            });
-            
-            gui.controllers.forEach(c => c.updateDisplay());
-
-            console.log("Sistema Totalmente Resetado!");
+        // ==========================================
+        // Chama a ponte que arruma tudo lá no main.js
+        if (typeof window.forcarResetDaCena === 'function') {
+            window.forcarResetDaCena();
         }
-    };
+        // ==========================================
+
+        gui.folders.forEach(folder => {
+            folder.controllers.forEach(c => c.updateDisplay());
+        });
+        
+        gui.controllers.forEach(c => c.updateDisplay());
+
+        console.log("Sistema Totalmente Resetado!");
+    }
+};
 
     gui.add(acoes, 'resetar').name('Resetar Sistema');
 }
