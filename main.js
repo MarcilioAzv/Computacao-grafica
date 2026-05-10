@@ -50,6 +50,32 @@ const modelTemplates = {
 
 let activeChunks = [];
 
+const textureLoader = new THREE.TextureLoader();
+
+const pathColorMap = textureLoader.load('./assets/path/GroundDirtWeedsPatchy004_COL_1K.jpg');
+const pathNormalMap = textureLoader.load('./assets/path/GroundDirtWeedsPatchy004_NRM_1K.jpg');
+const pathAOMap = textureLoader.load('./assets/path/GroundDirtWeedsPatchy004_AO_1K.jpg');
+const pathGlossMap = textureLoader.load('./assets/path/GroundDirtWeedsPatchy004_GLOSS_1K.jpg');
+
+pathColorMap.colorSpace = THREE.SRGBColorSpace;
+
+[pathColorMap, pathNormalMap, pathAOMap, pathGlossMap].forEach(tex => {
+
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+
+    tex.repeat.set(8, 8);
+
+});
+
+const pathMaterial = new THREE.MeshStandardMaterial({
+
+    map: pathColorMap,
+    normalMap: pathNormalMap,
+    aoMap: pathAOMap,
+    roughness: 1.0
+});
+
 // ─── PRELOAD DOS MODELOS ─────────────────────────────────────────────────────
 
 async function preloadChunkModels() {
@@ -96,8 +122,37 @@ function seedDecorations(chunkGroup) {
     for (let i = 0; i < count; i++) {
       const clone = modelTemplates[key].clone(true);
 
-      const localX = (Math.random() * 2 - 1) * half;
-      const localZ = (Math.random() * 2 - 1) * half;
+    let localX, localZ;
+
+let validPosition = false;
+
+let attempts = 0;
+const maxAttempts = 30;
+
+while (!validPosition && attempts < maxAttempts) {
+
+    localX = (Math.random() * 2 - 1) * half;
+    localZ = (Math.random() * 2 - 1) * half;
+
+    const worldPosX = chunkGroup.position.x + localX;
+    const worldPosZ = chunkGroup.position.z + localZ;
+
+    const corridorWidth = 30;
+    const corridorLength = 5000;
+    const spawnLineX = -40;
+    const insideCorridor =
+        Math.abs(worldPosX - spawnLineX) < corridorWidth &&
+        worldPosZ > -corridorLength &&
+        worldPosZ < 100;
+
+    if (!insideCorridor) {
+        validPosition = true;
+    }
+
+    attempts++;
+}
+
+if (!validPosition) continue;
 
       clone.position.set(localX, 0, localZ);
 
@@ -147,6 +202,30 @@ function buildChunk(chunkX, chunkZ) {
 
     group.add(scaleContainer);
   }
+const pathWidth = 50;
+const spawnLineX = -40;
+
+const isPathChunk =
+    Math.abs(worldX - spawnLineX) < pathWidth;
+
+if (isPathChunk) {
+
+    const pathMesh = new THREE.Mesh(
+        new THREE.PlaneGeometry(pathWidth, CHUNK_SIZE),
+        pathMaterial
+    );
+
+    pathMesh.rotation.x = -Math.PI / 2;
+
+    pathMesh.position.set(
+        spawnLineX - worldX,
+        0.3,
+        0
+    );
+
+    group.add(pathMesh);
+}
+
 
   seedDecorations(group);
 
@@ -813,6 +892,8 @@ window.addEventListener("mousedown", (e) => {
     const direction = new THREE.Vector3()
       .subVectors(targetPoint, spawnPosition)
       .normalize();
+
+      console.log(direction);
 
     projectileBody.velocity.set(
       direction.x * config.v0,
