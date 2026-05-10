@@ -1020,6 +1020,6 @@ window.forcarResetDaCena = function () {
 window.atualizarPitchPelaInterface = function (anguloEmGraus) {
   if (!isFiring) {
     const clampado = Math.max(-20, Math.min(60, anguloEmGraus));
-    pitch = -(clampado * (Math.PI / 180));
+    pitch = clampado * (Math.PI / 180);
   }
 };

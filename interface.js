@@ -52,7 +52,6 @@ export function iniciarInterface(config, world, setCameraModo) {
         window.atualizarPitchPelaInterface(val);
     }
 }).listen();
-    pastaFisica.add(config, 'angle', -20, 60).name('Ângulo (°)');
     
     // Adicionamos o .onChange na gravidade para atualizar o mundo físico na hora
     pastaFisica.add(config, 'gravity', 0, 20).name('Gravidade (m/s²)').step(0.1).onChange(v => {
@@ -67,7 +66,7 @@ export function iniciarInterface(config, world, setCameraModo) {
     const extras = {
         tipoProjetil: 'Bala',
         corRastro: '#ffffff',
-        mostrarTrajetoria: true,
+        plotarGrafico: true,
         modoCamera: 'FPS'
     };
 
@@ -76,8 +75,7 @@ export function iniciarInterface(config, world, setCameraModo) {
     });
 
     pastaVisual.add(extras, 'tipoProjetil', ['Bala', 'Canhão']).name('Projétil');
-    pastaVisual.addColor(extras, 'corRastro').name('Cor do Traçante');
-    pastaVisual.add(extras, 'mostrarTrajetoria').name('Mostrar Trajetória');
+    pastaVisual.add(extras, 'plotarGrafico').name('Plotar Gráfico');
 
     const acoes = {
     resetar: function() {
@@ -88,7 +86,7 @@ export function iniciarInterface(config, world, setCameraModo) {
 
         extras.tipoProjetil = 'Bala';
         extras.corRastro = '#ffffff';
-        extras.mostrarTrajetoria = true;
+        extras.plotarGrafico = true;
         extras.modoCamera = 'FPS';
 
         if(typeof world !== 'undefined' && world) world.gravity.set(0, -9.81, 0);
