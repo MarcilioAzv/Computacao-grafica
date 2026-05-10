@@ -6,7 +6,6 @@ import { OrbitControls } from "https://unpkg.com/three@0.160.0/examples/jsm/cont
 import { Sky } from "https://unpkg.com/three@0.160.0/examples/jsm/objects/Sky.js";
 import { iniciarInterface } from "./interface.js";
 
-
 // ─── Variáveis Globais ────────────────────────────────────────────────────────
 let scene, camera, renderer;
 let projectile, projectileBody;
@@ -739,15 +738,15 @@ document.addEventListener("mousemove", (e) => {
     cameraTarget === "pistol" &&
     !isFiring
   ) {
-    yaw -= e.movementX * sensitivity;
+    // yaw removido — sem rotação horizontal
 
     pitch -= e.movementY * sensitivity;
 
-    const minLimit = 60 * (Math.PI / 180);
-
-    const maxLimit = 20 * (Math.PI / 180);
-
-    pitch = Math.max(-maxLimit, Math.min(minLimit, pitch));
+    //ângulo -20 a 60
+    pitch = Math.max(
+      -20 * (Math.PI / 180),
+      Math.min(60 * (Math.PI / 180), pitch),
+    );
 
     config.angle = parseFloat((pitch * (180 / Math.PI)).toFixed(1));
   }
@@ -939,6 +938,7 @@ window.forcarResetDaCena = function () {
 
 window.atualizarPitchPelaInterface = function (anguloEmGraus) {
   if (!isFiring) {
-    pitch = anguloEmGraus * (Math.PI / 180);
+    const clampado = Math.max(-20, Math.min(60, anguloEmGraus));
+    pitch = -(clampado * (Math.PI / 180));
   }
 };
