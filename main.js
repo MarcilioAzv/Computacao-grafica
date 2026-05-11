@@ -345,12 +345,12 @@ if (isPathChunk) {
             const larguraHitbox = 7.0;       // X: Estica para os lados
             const alturaHitbox = 10.0;        // Y: Estica para cima/baixo
             const profundidadeHitbox = 0.19;  // Z: Espessura da placa
-            
+
             const alturaBaseNoChao = 2.5;    // Altura onde a imagem do alvo fica no jogo
-            
+
             const ajusteAlturaHitbox = 0;    // Sobe ou desce SÓ a física
-            const ajusteProfundidade = 2; // Empurra a física pra frente ou pra trás
-            
+            const ajusteProfundidade = 0.2;  // Empurra a física pra frente ou pra trás
+
             const grausInclinacao = -25;     // Inclinação do alvo (ex: -10 graus)
             // ==========================================
 
@@ -773,6 +773,9 @@ function loadModel() {
         angularDamping: 0.5,
 
         fixedRotation: true,
+
+        collisionFilterGroup: 1,
+        collisionFilterMask: -1,
       });
 
     // Sensor de Colisão Único
@@ -822,7 +825,7 @@ function animate() {
   // STEP FÍSICO
   // ─────────────────────────────────────────────
 
-  world.step(1 / 60, delta, 3);
+  world.step(1 / 60, delta, 10);
 
   // ─────────────────────────────────────────────
   // UPDATE DOS CHUNKS
@@ -923,12 +926,22 @@ function animate() {
 
     // ─────────────────────────────────────────
     // OFFSET DINÂMICO
-    // segue trajetória real
+    // estável após ricochete
     // ─────────────────────────────────────────
 
-    const bulletOffset = velocityDir.clone().multiplyScalar(-8);
+    let bulletOffset;
 
-    bulletOffset.y += 2;
+    if (hasBounced) {
+      // Após ricochete: usa offset fixo para evitar balançada
+      if (!camera.userData.fixedOffset) {
+        camera.userData.fixedOffset = new THREE.Vector3(-8, 2, 0);
+      }
+      bulletOffset = camera.userData.fixedOffset.clone();
+    } else {
+      // Durante voo: offset dinâmico acompanha a trajetória
+      bulletOffset = velocityDir.clone().multiplyScalar(-8);
+      bulletOffset.y += 2;
+    }
 
     // ─────────────────────────────────────────
     // POSIÇÃO ALVO
@@ -977,12 +990,13 @@ function animate() {
 
           pistol.rotation.set(0, 0, 0);
 
-          // limpa cache
-          // da câmera
+          // limpa cache da câmera
 
           camera.userData.lookTarget = null;
 
           camera.userData.smoothPosition = null;
+
+          camera.userData.fixedOffset = null;
 
           window.returnTimer = null;
         }, 1000);
