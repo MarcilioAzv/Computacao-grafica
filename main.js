@@ -5,6 +5,7 @@ import { GLTFLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders
 import { OrbitControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js";
 import { Sky } from "https://unpkg.com/three@0.160.0/examples/jsm/objects/Sky.js";
 import { iniciarInterface } from "./interface.js";
+import { MTLLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/MTLLoader.js';
 
 // ─── Variáveis Globais ────────────────────────────────────────────────────────
 let scene, camera, renderer;
@@ -79,6 +80,72 @@ const pathMaterial = new THREE.MeshStandardMaterial({
 // ─── PRELOAD DOS MODELOS ─────────────────────────────────────────────────────
 
 async function preloadChunkModels() {
+
+  // Crie o objeto se ele não existir solto no topo do código
+if (typeof window.modelTemplates === 'undefined') window.modelTemplates = {};
+
+// Carrega o material e depois o objeto
+const mtlLoader = new MTLLoader();
+mtlLoader.setPath('./assets/45/'); // MUDE AQUI PARA A SUA PASTA
+
+mtlLoader.load('alvo1.mtl', (materials) => {
+    materials.preload();
+    
+    const objLoader = new OBJLoader();
+    objLoader.setMaterials(materials);
+    objLoader.setPath('./assets/45/'); // MUDE AQUI TAMBÉM
+    
+    objLoader.load('alvo1obj.obj', (object) => {
+        // Centraliza o modelo matematicamente para o Cannon.js entender
+        const box = new THREE.Box3().setFromObject(object);
+        const center = box.getCenter(new THREE.Vector3());
+        object.position.sub(center);
+        
+        // Ajuste a escala se o modelo vier gigante ou minúsculo
+        object.scale.set(0.1, 0.1, 0.1); 
+        
+        // Salva na memória global para clonar depois
+        modelTemplates.alvo = object;
+    });
+});
+
+window.preloadAlvo = function() {
+    return new Promise((resolve) => {
+        if (typeof window.modelTemplates === 'undefined') window.modelTemplates = {};
+
+        const mtlLoader = new MTLLoader();
+        mtlLoader.setPath('./assets/45/'); 
+
+        mtlLoader.load('alvo1.mtl', (materials) => {
+            materials.preload();
+            
+            const objLoader = new OBJLoader();
+            objLoader.setMaterials(materials);
+            objLoader.setPath('./assets/45/'); 
+            
+            objLoader.load('alvo1obj.obj', (object) => {
+                
+                // 1. Calcula o centro enquanto o objeto ainda é gigante
+                const box = new THREE.Box3().setFromObject(object);
+                const center = box.getCenter(new THREE.Vector3());
+                
+                // 2. Move o objeto para ficar perfeitamente no eixo zero
+                object.position.set(-center.x, -box.min.y , -center.z);
+                
+                // 3. Cria o "Pacote Invisível" e coloca o objeto dentro
+                const pacote = new THREE.Group();
+                pacote.add(object);
+                
+                // 4. Encolhe o PACOTE (isso preserva o centro matematicamente perfeito)
+                pacote.scale.set(0.1, 0.1, 0.1);
+                
+                modelTemplates.alvo = pacote;
+                resolve(); 
+            });
+        });
+    });
+};
+
   const loader = new GLTFLoader();
 
   const models = [
@@ -228,14 +295,114 @@ if (isPathChunk) {
 
 
   seedDecorations(group);
+  // ==========================================
+  // GERADOR DE ALVOS (Adaptado para THREE.Group)
+  // ==========================================
+  // Inicia um array no userData para guardar a física e apagar depois
+  group.userData.bodies = []; 
 
-  group.userData = {
+    // Verifica se o chunk atual está na mesma linha (X) da arma do jogador.
+    // Só gera o alvo se a distância lateral for menor que a metade do chunk.
+    // ==========================================
+    // GERADOR DE ALVOS (Dentro de buildChunk)
+    // ==========================================
+    group.userData.bodies = []; 
+
+    if (Math.abs(config.startX - worldX) < CHUNK_SIZE / 2) {
+        
+        const distanciasAlvos = [worldZ - 100, worldZ - 200]; 
+        
+        distanciasAlvos.forEach(z => {
+            if (z > -80) return; 
+
+            // 1. VISUAL: Modelo em pé e com pivot centralizado
+            let meshAlvo; 
+            
+            if (modelTemplates.alvo) {
+                meshAlvo = new THREE.Group();
+                const modeloImportado = modelTemplates.alvo.clone(true);
+                
+                // Levanta o modelo
+                modeloImportado.rotation.x = -Math.PI / 2; 
+                
+                // Centraliza o pivot no meio do objeto
+                const box = new THREE.Box3().setFromObject(modeloImportado);
+                const center = new THREE.Vector3();
+                box.getCenter(center);
+                modeloImportado.position.sub(center); 
+                
+                meshAlvo.add(modeloImportado);
+            } else {
+                const fallbackGeo = new THREE.BoxGeometry(4, 4, 0.5);
+                const fallbackMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+                meshAlvo = new THREE.Mesh(fallbackGeo, fallbackMat);
+                meshAlvo.geometry.center();
+            }
+
+            // ==========================================
+            // PAINEL COMPLETO DE CONTROLE (Tamanho, Posição e Angulação)
+            // ==========================================
+            const larguraHitbox = 7.0;       // X: Estica para os lados
+            const alturaHitbox = 10.0;        // Y: Estica para cima/baixo
+            const profundidadeHitbox = 0.19;  // Z: Espessura da placa
+            
+            const alturaBaseNoChao = 2.5;    // Altura onde a imagem do alvo fica no jogo
+            
+            const ajusteAlturaHitbox = 0;    // Sobe ou desce SÓ a física
+            const ajusteProfundidade = 2; // Empurra a física pra frente ou pra trás
+            
+            const grausInclinacao = -25;     // Inclinação do alvo (ex: -10 graus)
+            // ==========================================
+
+            // Coloca o visual no mapa
+            meshAlvo.position.set(config.startX - worldX, alturaBaseNoChao, z - worldZ); 
+            group.add(meshAlvo); 
+
+            // 2. FÍSICA: Usando os controles manuais
+            const halfExtents = new CANNON.Vec3(larguraHitbox / 2, alturaHitbox / 2, profundidadeHitbox / 2);
+            const targetShape = new CANNON.Box(halfExtents);
+            
+            const targetBody = new CANNON.Body({
+                mass: 0, 
+                shape: targetShape,
+            });
+            
+            // Aplica os offsets de posição globalmente
+            targetBody.position.set(config.startX, alturaBaseNoChao + ajusteAlturaHitbox, z + ajusteProfundidade); 
+            
+            // Aplica a inclinação na física
+            const inclinacaoRadianos = grausInclinacao * (Math.PI / 180);
+            targetBody.quaternion.setFromEuler(inclinacaoRadianos, 0, 0);
+
+            targetBody.isAlvo = true; 
+            targetBody.meshVisual = meshAlvo; 
+            
+            world.addBody(targetBody);
+            group.userData.bodies.push(targetBody); 
+            
+            // 3. MODO RAIO-X: Acompanha 100% a física
+            const helperGeo = new THREE.BoxGeometry(larguraHitbox, alturaHitbox, profundidadeHitbox); 
+            const helperMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true });
+            const helperMesh = new THREE.Mesh(helperGeo, helperMat);
+            
+            // Aplica os mesmos offsets e rotação do Cannon para o Three.js
+            helperMesh.position.set(config.startX - worldX, alturaBaseNoChao + ajusteAlturaHitbox, (z - worldZ) + ajusteProfundidade);
+            helperMesh.rotation.x = inclinacaoRadianos; 
+            
+            group.add(helperMesh);
+        });
+    }
+  group.userData.x = chunkX;
+  group.userData.z = chunkZ;
+
+  return group;
+
+    group.userData = {
     x: chunkX,
     z: chunkZ,
   };
-
-  return group;
 }
+
 
 // ─── SPAWN ───────────────────────────────────────────────────────────────────
 
@@ -263,7 +430,9 @@ function updateChunks() {
 
     if (distX > VIEW_RADIUS || distZ > VIEW_RADIUS) {
       scene.remove(chunk);
-
+      if (chunk.userData.bodies) {
+          chunk.userData.bodies.forEach(body => world.removeBody(body));
+      }
       chunk.traverse((child) => {
         if (!child.isMesh) return;
 
@@ -418,9 +587,12 @@ async function init() {
 
   // ─── SISTEMA PROCEDURAL ────────────────────────────────────────────────
 
-  await preloadChunkModels();
+  // ─── SISTEMA PROCEDURAL ────────────────────────────────────────────────
 
-  updateChunks();
+  await preloadChunkModels(); // Carrega o chão e árvores (sua função original)
+  await preloadAlvo();        // Carrega o alvo (a função nova)
+
+  updateChunks();             // Só gera o mapa depois que TUDO estiver carregado
 
   // ─── LOADERS ───────────────────────────────────────────────────────────
 
@@ -603,17 +775,38 @@ function loadModel() {
         fixedRotation: true,
       });
 
-      world.addBody(projectileBody);
-
+    // Sensor de Colisão Único
       projectileBody.addEventListener("collide", (e) => {
+        
+        // 1. Checa se bateu no chão
         if (e.body === groundBody && !hasBounced) {
           hasBounced = true;
-
           projectileBody.fixedRotation = false;
-
           projectileBody.updateMassProperties();
         }
+
+        // 2. Checa se bateu no alvo
+        if (e.body.isAlvo && !e.body.jaFoiAcertado) {
+          e.body.jaFoiAcertado = true;
+          // Percorre todas as partes do modelo 3D
+    e.body.meshVisual.traverse((child) => {
+    if (child.isMesh) {
+        // Clona o material apenas deste alvo específico para não afetar os outros
+        child.material = child.material.clone(); 
+        
+        // Pinta de verde (você pode usar emissive se a textura for muito escura)
+        child.material.color.setHex(0x00ff00);
+        
+        // Se quiser que ele brilhe no escuro quando acertar, descomente abaixo:
+        // child.material.emissive.setHex(0x00ff00);
+    }
+});
+          console.log("🎯 ALVO ABATIDO! Distância: " + Math.abs(e.body.position.z).toFixed(0) + " metros!");
+        }
+
       });
+
+      world.addBody(projectileBody);
 
       isLoaded = true;
     });
