@@ -23,6 +23,9 @@ let fireSound;
 let trajectorySamples = [];
 let trajectoryTimer = 0;
 let hitAlvo = false;
+let bulletYaw = 0;
+let bulletPitch = 0;
+const bulletRadius = 5;
 
 const flightQuaternion = new THREE.Quaternion();
 
@@ -824,7 +827,7 @@ function animate() {
   requestAnimationFrame(animate);
 
   const delta = clock.getDelta();
-
+  
   // ─────────────────────────────────────────────
   // STEP FÍSICO
   // ─────────────────────────────────────────────
@@ -933,25 +936,22 @@ function animate() {
     // estável após ricochete
     // ─────────────────────────────────────────
 
-    let bulletOffset;
-
-    if (hasBounced) {
-      // Após ricochete: usa offset fixo para evitar balançada
-      if (!camera.userData.fixedOffset) {
-        camera.userData.fixedOffset = new THREE.Vector3(-8, 2, 0);
-      }
-      bulletOffset = camera.userData.fixedOffset.clone();
-    } else {
-      // Durante voo: offset dinâmico acompanha a trajetória
-      bulletOffset = velocityDir.clone().multiplyScalar(-8);
-      bulletOffset.y += 2;
-    }
+    const offsetX = bulletRadius * Math.sin(bulletYaw) * Math.cos(bulletPitch);
+    const offsetY = bulletRadius * Math.sin(bulletPitch);
+    const offsetZ = bulletRadius * Math.cos(bulletYaw) * Math.cos(bulletPitch);
+    
+    const bulletOffset = new THREE.Vector3(offsetX, offsetY, offsetZ);
 
     // ─────────────────────────────────────────
     // POSIÇÃO ALVO
     // ─────────────────────────────────────────
 
     const desiredCameraPosition = projectile.position.clone().add(bulletOffset);
+
+    // Impede a câmera de passar do chão (o void). 
+    if (desiredCameraPosition.y < 0.5) {
+      desiredCameraPosition.y = 0.5;
+    }
 
     // ─────────────────────────────────────────
     // SMOOTH POSITION
@@ -961,9 +961,10 @@ function animate() {
       camera.userData.smoothPosition = desiredCameraPosition.clone();
     }
 
-    camera.userData.smoothPosition.lerp(desiredCameraPosition, 0.08);
-
+    camera.userData.smoothPosition.lerp(desiredCameraPosition, 0.2); 
     camera.position.copy(camera.userData.smoothPosition);
+
+    camera.lookAt(projectile.position);
 
     // ─────────────────────────────────────────
     // LOOK TARGET SUAVIZADO
@@ -1050,13 +1051,8 @@ document.addEventListener("click", (e) => {
 // ─── MOUSE LOOK ─────────────────────────────────────────────────────────────
 
 document.addEventListener("mousemove", (e) => {
-  if (
-    document.pointerLockElement === renderer.domElement &&
-    cameraTarget === "pistol" &&
-    !isFiring
-  ) {
-    // yaw removido — sem rotação horizontal
-
+  if (document.pointerLockElement === renderer.domElement && !isFiring && cameraTarget === "pistol") {
+    
     pitch -= e.movementY * sensitivity;
 
     //ângulo -20 a 60
@@ -1066,6 +1062,14 @@ document.addEventListener("mousemove", (e) => {
     );
 
     config.angle = parseFloat((pitch * (180 / Math.PI)).toFixed(1));
+    
+  } else if (document.pointerLockElement === renderer.domElement && cameraTarget === "bullet") {
+    // Gira a câmera em volta da bala
+    bulletYaw -= e.movementX * sensitivity;
+    bulletPitch += e.movementY * sensitivity;
+
+    // Limita o pitch para a câmera não virar de cabeça para baixo
+    bulletPitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, bulletPitch));
   }
 });
 
@@ -1137,6 +1141,10 @@ window.addEventListener("mousedown", (e) => {
 
     console.log(direction);
 
+    // A câmera é posicionada nas costas da bala
+    bulletYaw = Math.atan2(-direction.x, -direction.z); 
+    bulletPitch = 0.2; // Leve inclinada pra cima
+
     projectileBody.velocity.set(
       direction.x * config.v0,
       direction.y * config.v0,
@@ -1200,9 +1208,10 @@ init();
 // ─── GUI ────────────────────────────────────────────────────────────────────
 
 iniciarInterface(config, world, (modo) => {
+  modoVisaoPainel = modo; 
+
   if (modo === "LIVRE") {
     cameraTarget = "none";
-
     document.exitPointerLock();
   } else {
     cameraTarget = "pistol";
