@@ -1,12 +1,14 @@
 <!DOCTYPE html>
 <html lang="pt-br">
+
 <head>
     <meta charset="UTF-8">
     <title>Jogo de Física - Three.js</title>
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
-<div id="crosshair" style="
+    <div id="crosshair" style="
     position: fixed;
     top: 50%;
     left: 50%;
@@ -19,9 +21,67 @@
     align-items: center;
     justify-content: center;
 ">
-    <div style="width: 4px; height: 4px; background-color: red; border-radius: 50%;"></div>
-    
-    <div style="position: absolute; width: 2px; height: 10px; background-color: lime; top: -12px;"></div> <div style="position: absolute; width: 2px; height: 10px; background-color: lime; bottom: -12px;"></div> <div style="position: absolute; width: 10px; height: 2px; background-color: lime; left: -12px;"></div> <div style="position: absolute; width: 10px; height: 2px; background-color: lime; right: -12px;"></div> </div>
+        <div style="width: 4px; height: 4px; background-color: red; border-radius: 50%;"></div>
+
+        <div style="position: absolute; width: 2px; height: 10px; background-color: lime; top: -12px;"></div>
+        <div style="position: absolute; width: 2px; height: 10px; background-color: lime; bottom: -12px;"></div>
+        <div style="position: absolute; width: 10px; height: 2px; background-color: lime; left: -12px;"></div>
+        <div style="position: absolute; width: 10px; height: 2px; background-color: lime; right: -12px;"></div>
+    </div>
+    <!-- RELATÓRIO BALÍSTICO -->
+    <div id="ballistics-overlay">
+        <div id="ballistics-panel">
+            <div class="bp-header">
+                <div>
+                    <h2>relatório balístico</h2>
+                    <span id="bp-subtitle">trajetória finalizada</span>
+                </div>
+                <button class="bp-close"
+                    onclick="event.stopPropagation(); document.getElementById('ballistics-overlay').classList.remove('visible')">
+                    fechar
+                </button>
+            </div>
+            <div class="bp-metrics">
+                <div class="bp-metric">
+                    <div class="label">distância total</div>
+                    <div class="value" id="bp-distance">—</div><span class="unit">m</span>
+                </div>
+                <div class="bp-metric">
+                    <div class="label">altura máx.</div>
+                    <div class="value" id="bp-maxheight">—</div><span class="unit">m</span>
+                </div>
+                <div class="bp-metric">
+                    <div class="label">vel. inicial</div>
+                    <div class="value" id="bp-v0">—</div><span class="unit">m/s</span>
+                </div>
+                <div class="bp-metric">
+                    <div class="label">resultado</div>
+                    <div class="value" id="bp-hit" style="font-size:13px;padding-top:4px">—</div>
+                </div>
+            </div>
+            <div class="bp-section-title">trajetória por intervalo</div>
+            <div style="overflow-x:auto;padding-bottom:4px;">
+                <table class="bp-table">
+                    <thead>
+                        <tr>
+                            <th>ponto</th>
+                            <th>dist. Z (m)</th>
+                            <th>altura (m)</th>
+                            <th>velocidade (m/s)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bp-tbody"></tbody>
+                </table>
+            </div>
+            <div class="bp-footer">
+                <span class="note" id="bp-time-note">tempo de voo: —</span>
+                <button class="bp-btn-reset"
+                    onclick="event.stopPropagation(); document.getElementById('ballistics-overlay').classList.remove('visible'); if(window.forcarResetDaCena) window.forcarResetDaCena();">
+                    ↺ atirar novamente
+                </button>
+            </div>
+        </div>
+    </div>
     <!-- Import Maps ajuda o navegador a entender o Three.js sem precisar de instalação complexa agora -->
     <script type="importmap">
         {
@@ -31,7 +91,55 @@
             }
         }
     </script>
+    <script>
+        window.mostrarRelatorio = function (samples, acertou) {
+            if (!samples || samples.length === 0) return;
+            const last = samples[samples.length - 1];
+            const first = samples[0];
+            const maxH = Math.max(...samples.map(s => s.y));
+            const totalDist = Math.abs(last.z - first.z);
+            const totalTime = last.t;
+
+            document.getElementById('bp-distance').textContent = totalDist.toFixed(1);
+            document.getElementById('bp-maxheight').textContent = maxH.toFixed(1);
+            document.getElementById('bp-v0').textContent = first.spd.toFixed(1);
+            document.getElementById('bp-time-note').textContent = 'tempo de voo: ' + totalTime.toFixed(2) + 's';
+            document.getElementById('bp-subtitle').textContent = new Date().toLocaleTimeString('pt-BR');
+
+            const hitEl = document.getElementById('bp-hit');
+            hitEl.innerHTML = acertou
+                ? '<span class="hit-badge">✓ acerto</span>'
+                : '<span class="miss-badge">✗ erro</span>';
+
+            const maxSpd = Math.max(...samples.map(s => s.spd));
+            const maxY = Math.max(...samples.map(s => s.y)) || 1;
+            const maxZ = Math.max(...samples.map(s => Math.abs(s.z))) || 1;
+
+            const step = Math.max(1, Math.floor(samples.length / 10));
+            const rows = [];
+            for (let i = 0; i < samples.length; i += step) rows.push(samples[i]);
+            if (rows[rows.length - 1] !== samples[samples.length - 1]) rows.push(samples[samples.length - 1]);
+
+            const tbody = document.getElementById('bp-tbody');
+            tbody.innerHTML = rows.map((s, idx) => {
+                const barZ = Math.round((Math.abs(s.z) / maxZ) * 60);
+                const barY = Math.round((s.y / maxY) * 60);
+                const barSpd = Math.round((s.spd / maxSpd) * 60);
+                const label = idx === 0 ? 'lançamento' : idx === rows.length - 1 ? 'impacto' : `t=${s.t.toFixed(1)}s`;
+                return `<tr>
+                <td>${label}</td>
+                <td><div class="bar-wrap">${Math.abs(s.z).toFixed(1)}<div class="bar" style="width:${barZ}px"></div></div></td>
+                <td><div class="bar-wrap">${s.y.toFixed(1)}<div class="bar alt" style="width:${barY}px"></div></div></td>
+                <td><div class="bar-wrap">${s.spd.toFixed(1)}<div class="bar warn" style="width:${barSpd}px"></div></div></td>
+                </tr>`;
+            }).join('');
+
+            document.getElementById('ballistics-overlay').classList.add('visible');
+        };
+
+    </script>
     <script type="module" src="main.js"></script>
     <script type="module" src="interface.js"></script>
 </body>
+
 </html>

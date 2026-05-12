@@ -20,6 +20,9 @@ let mixer;
 let shootAction;
 let cameraTarget = "pistol";
 let fireSound;
+let trajectorySamples = [];
+let trajectoryTimer = 0;
+let hitAlvo = false;
 
 const flightQuaternion = new THREE.Quaternion();
 
@@ -62,19 +65,19 @@ pathColorMap.colorSpace = THREE.SRGBColorSpace;
 
 [pathColorMap, pathNormalMap, pathAOMap, pathGlossMap].forEach(tex => {
 
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
 
-    tex.repeat.set(8, 8);
+  tex.repeat.set(8, 8);
 
 });
 
 const pathMaterial = new THREE.MeshStandardMaterial({
 
-    map: pathColorMap,
-    normalMap: pathNormalMap,
-    aoMap: pathAOMap,
-    roughness: 1.0
+  map: pathColorMap,
+  normalMap: pathNormalMap,
+  aoMap: pathAOMap,
+  roughness: 1.0
 });
 
 // ─── PRELOAD DOS MODELOS ─────────────────────────────────────────────────────
@@ -82,69 +85,69 @@ const pathMaterial = new THREE.MeshStandardMaterial({
 async function preloadChunkModels() {
 
   // Crie o objeto se ele não existir solto no topo do código
-if (typeof window.modelTemplates === 'undefined') window.modelTemplates = {};
+  if (typeof window.modelTemplates === 'undefined') window.modelTemplates = {};
 
-// Carrega o material e depois o objeto
-const mtlLoader = new MTLLoader();
-mtlLoader.setPath('./assets/45/'); // MUDE AQUI PARA A SUA PASTA
+  // Carrega o material e depois o objeto
+  const mtlLoader = new MTLLoader();
+  mtlLoader.setPath('./assets/45/'); // MUDE AQUI PARA A SUA PASTA
 
-mtlLoader.load('alvo1.mtl', (materials) => {
+  mtlLoader.load('alvo1.mtl', (materials) => {
     materials.preload();
-    
+
     const objLoader = new OBJLoader();
     objLoader.setMaterials(materials);
     objLoader.setPath('./assets/45/'); // MUDE AQUI TAMBÉM
-    
+
     objLoader.load('alvo1obj.obj', (object) => {
-        // Centraliza o modelo matematicamente para o Cannon.js entender
-        const box = new THREE.Box3().setFromObject(object);
-        const center = box.getCenter(new THREE.Vector3());
-        object.position.sub(center);
-        
-        // Ajuste a escala se o modelo vier gigante ou minúsculo
-        object.scale.set(0.1, 0.1, 0.1); 
-        
-        // Salva na memória global para clonar depois
-        modelTemplates.alvo = object;
-    });
-});
+      // Centraliza o modelo matematicamente para o Cannon.js entender
+      const box = new THREE.Box3().setFromObject(object);
+      const center = box.getCenter(new THREE.Vector3());
+      object.position.sub(center);
 
-window.preloadAlvo = function() {
+      // Ajuste a escala se o modelo vier gigante ou minúsculo
+      object.scale.set(0.1, 0.1, 0.1);
+
+      // Salva na memória global para clonar depois
+      modelTemplates.alvo = object;
+    });
+  });
+
+  window.preloadAlvo = function () {
     return new Promise((resolve) => {
-        if (typeof window.modelTemplates === 'undefined') window.modelTemplates = {};
+      if (typeof window.modelTemplates === 'undefined') window.modelTemplates = {};
 
-        const mtlLoader = new MTLLoader();
-        mtlLoader.setPath('./assets/45/'); 
+      const mtlLoader = new MTLLoader();
+      mtlLoader.setPath('./assets/45/');
 
-        mtlLoader.load('alvo1.mtl', (materials) => {
-            materials.preload();
-            
-            const objLoader = new OBJLoader();
-            objLoader.setMaterials(materials);
-            objLoader.setPath('./assets/45/'); 
-            
-            objLoader.load('alvo1obj.obj', (object) => {
-                
-                // 1. Calcula o centro enquanto o objeto ainda é gigante
-                const box = new THREE.Box3().setFromObject(object);
-                const center = box.getCenter(new THREE.Vector3());
-                
-                // 2. Move o objeto para ficar perfeitamente no eixo zero
-                object.position.set(-center.x, -box.min.y , -center.z);
-                
-                // 3. Cria o "Pacote Invisível" e coloca o objeto dentro
-                const pacote = new THREE.Group();
-                pacote.add(object);
-                
-                // 4. Encolhe o PACOTE (isso preserva o centro matematicamente perfeito)
-                pacote.scale.set(0.1, 0.1, 0.1);
-                
-                modelTemplates.alvo = pacote;
-                resolve(); 
-            });
+      mtlLoader.load('alvo1.mtl', (materials) => {
+        materials.preload();
+
+        const objLoader = new OBJLoader();
+        objLoader.setMaterials(materials);
+        objLoader.setPath('./assets/45/');
+
+        objLoader.load('alvo1obj.obj', (object) => {
+
+          // 1. Calcula o centro enquanto o objeto ainda é gigante
+          const box = new THREE.Box3().setFromObject(object);
+          const center = box.getCenter(new THREE.Vector3());
+
+          // 2. Move o objeto para ficar perfeitamente no eixo zero
+          object.position.set(-center.x, -box.min.y, -center.z);
+
+          // 3. Cria o "Pacote Invisível" e coloca o objeto dentro
+          const pacote = new THREE.Group();
+          pacote.add(object);
+
+          // 4. Encolhe o PACOTE (isso preserva o centro matematicamente perfeito)
+          pacote.scale.set(0.1, 0.1, 0.1);
+
+          modelTemplates.alvo = pacote;
+          resolve();
         });
+      });
     });
-};
+  };
 
   const loader = new GLTFLoader();
 
@@ -189,37 +192,37 @@ function seedDecorations(chunkGroup) {
     for (let i = 0; i < count; i++) {
       const clone = modelTemplates[key].clone(true);
 
-    let localX, localZ;
+      let localX, localZ;
 
-let validPosition = false;
+      let validPosition = false;
 
-let attempts = 0;
-const maxAttempts = 30;
+      let attempts = 0;
+      const maxAttempts = 30;
 
-while (!validPosition && attempts < maxAttempts) {
+      while (!validPosition && attempts < maxAttempts) {
 
-    localX = (Math.random() * 2 - 1) * half;
-    localZ = (Math.random() * 2 - 1) * half;
+        localX = (Math.random() * 2 - 1) * half;
+        localZ = (Math.random() * 2 - 1) * half;
 
-    const worldPosX = chunkGroup.position.x + localX;
-    const worldPosZ = chunkGroup.position.z + localZ;
+        const worldPosX = chunkGroup.position.x + localX;
+        const worldPosZ = chunkGroup.position.z + localZ;
 
-    const corridorWidth = 30;
-    const corridorLength = 5000;
-    const spawnLineX = -40;
-    const insideCorridor =
-        Math.abs(worldPosX - spawnLineX) < corridorWidth &&
-        worldPosZ > -corridorLength &&
-        worldPosZ < 100;
+        const corridorWidth = 30;
+        const corridorLength = 5000;
+        const spawnLineX = -40;
+        const insideCorridor =
+          Math.abs(worldPosX - spawnLineX) < corridorWidth &&
+          worldPosZ > -corridorLength &&
+          worldPosZ < 100;
 
-    if (!insideCorridor) {
-        validPosition = true;
-    }
+        if (!insideCorridor) {
+          validPosition = true;
+        }
 
-    attempts++;
-}
+        attempts++;
+      }
 
-if (!validPosition) continue;
+      if (!validPosition) continue;
 
       clone.position.set(localX, 0, localZ);
 
@@ -269,29 +272,29 @@ function buildChunk(chunkX, chunkZ) {
 
     group.add(scaleContainer);
   }
-const pathWidth = 50;
-const spawnLineX = -40;
+  const pathWidth = 50;
+  const spawnLineX = -40;
 
-const isPathChunk =
+  const isPathChunk =
     Math.abs(worldX - spawnLineX) < pathWidth;
 
-if (isPathChunk) {
+  if (isPathChunk) {
 
     const pathMesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(pathWidth, CHUNK_SIZE),
-        pathMaterial
+      new THREE.PlaneGeometry(pathWidth, CHUNK_SIZE),
+      pathMaterial
     );
 
     pathMesh.rotation.x = -Math.PI / 2;
 
     pathMesh.position.set(
-        spawnLineX - worldX,
-        0.3,
-        0
+      spawnLineX - worldX,
+      0.3,
+      0
     );
 
     group.add(pathMesh);
-}
+  }
 
 
   seedDecorations(group);
@@ -299,105 +302,105 @@ if (isPathChunk) {
   // GERADOR DE ALVOS (Adaptado para THREE.Group)
   // ==========================================
   // Inicia um array no userData para guardar a física e apagar depois
-  group.userData.bodies = []; 
+  group.userData.bodies = [];
 
-    // Verifica se o chunk atual está na mesma linha (X) da arma do jogador.
-    // Só gera o alvo se a distância lateral for menor que a metade do chunk.
-    // ==========================================
-    // GERADOR DE ALVOS (Dentro de buildChunk)
-    // ==========================================
-    group.userData.bodies = []; 
+  // Verifica se o chunk atual está na mesma linha (X) da arma do jogador.
+  // Só gera o alvo se a distância lateral for menor que a metade do chunk.
+  // ==========================================
+  // GERADOR DE ALVOS (Dentro de buildChunk)
+  // ==========================================
+  group.userData.bodies = [];
 
-    if (Math.abs(config.startX - worldX) < CHUNK_SIZE / 2) {
-        
-        const distanciasAlvos = [worldZ - 100, worldZ - 200]; 
-        
-        distanciasAlvos.forEach(z => {
-            if (z > -80) return; 
+  if (Math.abs(config.startX - worldX) < CHUNK_SIZE / 2) {
 
-            // 1. VISUAL: Modelo em pé e com pivot centralizado
-            let meshAlvo; 
-            
-            if (modelTemplates.alvo) {
-                meshAlvo = new THREE.Group();
-                const modeloImportado = modelTemplates.alvo.clone(true);
-                
-                // Levanta o modelo
-                modeloImportado.rotation.x = -Math.PI / 2; 
-                
-                // Centraliza o pivot no meio do objeto
-                const box = new THREE.Box3().setFromObject(modeloImportado);
-                const center = new THREE.Vector3();
-                box.getCenter(center);
-                modeloImportado.position.sub(center); 
-                
-                meshAlvo.add(modeloImportado);
-            } else {
-                const fallbackGeo = new THREE.BoxGeometry(4, 4, 0.5);
-                const fallbackMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-                meshAlvo = new THREE.Mesh(fallbackGeo, fallbackMat);
-                meshAlvo.geometry.center();
-            }
+    const distanciasAlvos = [worldZ - 100, worldZ - 200];
 
-            // ==========================================
-            // PAINEL COMPLETO DE CONTROLE (Tamanho, Posição e Angulação)
-            // ==========================================
-            const larguraHitbox = 7.0;       // X: Estica para os lados
-            const alturaHitbox = 10.0;        // Y: Estica para cima/baixo
-            const profundidadeHitbox = 0.19;  // Z: Espessura da placa
+    distanciasAlvos.forEach(z => {
+      if (z > -80) return;
 
-            const alturaBaseNoChao = 2.5;    // Altura onde a imagem do alvo fica no jogo
+      // 1. VISUAL: Modelo em pé e com pivot centralizado
+      let meshAlvo;
 
-            const ajusteAlturaHitbox = 0;    // Sobe ou desce SÓ a física
-            const ajusteProfundidade = 0.2;  // Empurra a física pra frente ou pra trás
+      if (modelTemplates.alvo) {
+        meshAlvo = new THREE.Group();
+        const modeloImportado = modelTemplates.alvo.clone(true);
 
-            const grausInclinacao = -25;     // Inclinação do alvo (ex: -10 graus)
-            // ==========================================
+        // Levanta o modelo
+        modeloImportado.rotation.x = -Math.PI / 2;
 
-            // Coloca o visual no mapa
-            meshAlvo.position.set(config.startX - worldX, alturaBaseNoChao, z - worldZ); 
-            group.add(meshAlvo); 
+        // Centraliza o pivot no meio do objeto
+        const box = new THREE.Box3().setFromObject(modeloImportado);
+        const center = new THREE.Vector3();
+        box.getCenter(center);
+        modeloImportado.position.sub(center);
 
-            // 2. FÍSICA: Usando os controles manuais
-            const halfExtents = new CANNON.Vec3(larguraHitbox / 2, alturaHitbox / 2, profundidadeHitbox / 2);
-            const targetShape = new CANNON.Box(halfExtents);
-            
-            const targetBody = new CANNON.Body({
-                mass: 0, 
-                shape: targetShape,
-            });
-            
-            // Aplica os offsets de posição globalmente
-            targetBody.position.set(config.startX, alturaBaseNoChao + ajusteAlturaHitbox, z + ajusteProfundidade); 
-            
-            // Aplica a inclinação na física
-            const inclinacaoRadianos = grausInclinacao * (Math.PI / 180);
-            targetBody.quaternion.setFromEuler(inclinacaoRadianos, 0, 0);
+        meshAlvo.add(modeloImportado);
+      } else {
+        const fallbackGeo = new THREE.BoxGeometry(4, 4, 0.5);
+        const fallbackMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+        meshAlvo = new THREE.Mesh(fallbackGeo, fallbackMat);
+        meshAlvo.geometry.center();
+      }
 
-            targetBody.isAlvo = true; 
-            targetBody.meshVisual = meshAlvo; 
-            
-            world.addBody(targetBody);
-            group.userData.bodies.push(targetBody); 
-            
-            // 3. MODO RAIO-X: Acompanha 100% a física
-            const helperGeo = new THREE.BoxGeometry(larguraHitbox, alturaHitbox, profundidadeHitbox); 
-            const helperMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true });
-            const helperMesh = new THREE.Mesh(helperGeo, helperMat);
-            
-            // Aplica os mesmos offsets e rotação do Cannon para o Three.js
-            helperMesh.position.set(config.startX - worldX, alturaBaseNoChao + ajusteAlturaHitbox, (z - worldZ) + ajusteProfundidade);
-            helperMesh.rotation.x = inclinacaoRadianos; 
-            
-            group.add(helperMesh);
-        });
-    }
+      // ==========================================
+      // PAINEL COMPLETO DE CONTROLE (Tamanho, Posição e Angulação)
+      // ==========================================
+      const larguraHitbox = 7.0;       // X: Estica para os lados
+      const alturaHitbox = 10.0;        // Y: Estica para cima/baixo
+      const profundidadeHitbox = 0.19;  // Z: Espessura da placa
+
+      const alturaBaseNoChao = 2.5;    // Altura onde a imagem do alvo fica no jogo
+
+      const ajusteAlturaHitbox = 0;    // Sobe ou desce SÓ a física
+      const ajusteProfundidade = 0.2;  // Empurra a física pra frente ou pra trás
+
+      const grausInclinacao = -25;     // Inclinação do alvo (ex: -10 graus)
+      // ==========================================
+
+      // Coloca o visual no mapa
+      meshAlvo.position.set(config.startX - worldX, alturaBaseNoChao, z - worldZ);
+      group.add(meshAlvo);
+
+      // 2. FÍSICA: Usando os controles manuais
+      const halfExtents = new CANNON.Vec3(larguraHitbox / 2, alturaHitbox / 2, profundidadeHitbox / 2);
+      const targetShape = new CANNON.Box(halfExtents);
+
+      const targetBody = new CANNON.Body({
+        mass: 0,
+        shape: targetShape,
+      });
+
+      // Aplica os offsets de posição globalmente
+      targetBody.position.set(config.startX, alturaBaseNoChao + ajusteAlturaHitbox, z + ajusteProfundidade);
+
+      // Aplica a inclinação na física
+      const inclinacaoRadianos = grausInclinacao * (Math.PI / 180);
+      targetBody.quaternion.setFromEuler(inclinacaoRadianos, 0, 0);
+
+      targetBody.isAlvo = true;
+      targetBody.meshVisual = meshAlvo;
+
+      world.addBody(targetBody);
+      group.userData.bodies.push(targetBody);
+
+      // 3. MODO RAIO-X: Acompanha 100% a física
+      const helperGeo = new THREE.BoxGeometry(larguraHitbox, alturaHitbox, profundidadeHitbox);
+      const helperMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true });
+      const helperMesh = new THREE.Mesh(helperGeo, helperMat);
+
+      // Aplica os mesmos offsets e rotação do Cannon para o Three.js
+      helperMesh.position.set(config.startX - worldX, alturaBaseNoChao + ajusteAlturaHitbox, (z - worldZ) + ajusteProfundidade);
+      helperMesh.rotation.x = inclinacaoRadianos;
+
+      group.add(helperMesh);
+    });
+  }
   group.userData.x = chunkX;
   group.userData.z = chunkZ;
 
   return group;
 
-    group.userData = {
+  group.userData = {
     x: chunkX,
     z: chunkZ,
   };
@@ -431,7 +434,7 @@ function updateChunks() {
     if (distX > VIEW_RADIUS || distZ > VIEW_RADIUS) {
       scene.remove(chunk);
       if (chunk.userData.bodies) {
-          chunk.userData.bodies.forEach(body => world.removeBody(body));
+        chunk.userData.bodies.forEach(body => world.removeBody(body));
       }
       chunk.traverse((child) => {
         if (!child.isMesh) return;
@@ -676,7 +679,7 @@ function loadPistol() {
         });
       }
 
-      child.raycast = () => {};
+      child.raycast = () => { };
     });
 
     object.rotation.y = Math.PI;
@@ -778,9 +781,9 @@ function loadModel() {
         collisionFilterMask: -1,
       });
 
-    // Sensor de Colisão Único
+      // Sensor de Colisão Único
       projectileBody.addEventListener("collide", (e) => {
-        
+
         // 1. Checa se bateu no chão
         if (e.body === groundBody && !hasBounced) {
           hasBounced = true;
@@ -791,19 +794,20 @@ function loadModel() {
         // 2. Checa se bateu no alvo
         if (e.body.isAlvo && !e.body.jaFoiAcertado) {
           e.body.jaFoiAcertado = true;
+          hitAlvo = true;
           // Percorre todas as partes do modelo 3D
-    e.body.meshVisual.traverse((child) => {
-    if (child.isMesh) {
-        // Clona o material apenas deste alvo específico para não afetar os outros
-        child.material = child.material.clone(); 
-        
-        // Pinta de verde (você pode usar emissive se a textura for muito escura)
-        child.material.color.setHex(0x00ff00);
-        
-        // Se quiser que ele brilhe no escuro quando acertar, descomente abaixo:
-        // child.material.emissive.setHex(0x00ff00);
-    }
-});
+          e.body.meshVisual.traverse((child) => {
+            if (child.isMesh) {
+              // Clona o material apenas deste alvo específico para não afetar os outros
+              child.material = child.material.clone();
+
+              // Pinta de verde (você pode usar emissive se a textura for muito escura)
+              child.material.color.setHex(0x00ff00);
+
+              // Se quiser que ele brilhe no escuro quando acertar, descomente abaixo:
+              // child.material.emissive.setHex(0x00ff00);
+            }
+          });
           console.log("🎯 ALVO ABATIDO! Distância: " + Math.abs(e.body.position.z).toFixed(0) + " metros!");
         }
 
@@ -980,27 +984,53 @@ function animate() {
     if ((speed < 0.2 && hasBounced) || projectileBody.position.y < -10) {
       if (!window.returnTimer) {
         window.returnTimer = setTimeout(() => {
+          // Adiciona última amostra de impacto
+          const finalSpd = new THREE.Vector3(
+            projectileBody.velocity.x,
+            projectileBody.velocity.y,
+            projectileBody.velocity.z
+          ).length();
+          trajectorySamples.push({
+            t: clock.elapsedTime,
+            z: projectileBody.position.z,
+            y: Math.max(0, projectileBody.position.y),
+            spd: finalSpd
+          });
+
+          // Normaliza os tempos para começar do zero
+          if (trajectorySamples.length > 0) {
+            const t0 = trajectorySamples[0].t;
+            trajectorySamples.forEach(s => s.t -= t0);
+          }
+
+          // Mostra o relatório
+          if (window.mostrarRelatorio) {
+            window.mostrarRelatorio(trajectorySamples, hitAlvo);
+          }
+
           isFiring = false;
-
           cameraTarget = "pistol";
-
-          camera.attach(pistol);
-
-          pistol.position.set(2, -4, -2);
-
-          pistol.rotation.set(0, 0, 0);
-
-          // limpa cache da câmera
-
-          camera.userData.lookTarget = null;
-
-          camera.userData.smoothPosition = null;
-
-          camera.userData.fixedOffset = null;
-
-          window.returnTimer = null;
+          // ... resto do reset original
         }, 1000);
       }
+    }
+  }
+
+  if (projectile.visible && !hasBounced) {
+    trajectoryTimer += delta;
+    if (trajectoryTimer >= 0.25) { // coleta a cada 0.25s
+      trajectoryTimer = 0;
+      const spd = new THREE.Vector3(
+        projectileBody.velocity.x,
+        projectileBody.velocity.y,
+        projectileBody.velocity.z
+      ).length();
+      trajectorySamples.push({
+        t: clock.elapsedTime,
+        z: projectileBody.position.z,
+        y: projectileBody.position.y,
+        spd: spd
+      });
     }
   }
 
@@ -1010,6 +1040,7 @@ function animate() {
 
 document.addEventListener("click", (e) => {
   if (e.target.closest(".lil-gui")) return;
+  if (document.getElementById('ballistics-overlay').classList.contains('visible')) return; // ADICIONE
 
   if (cameraTarget === "pistol") {
     renderer.domElement.requestPointerLock();
@@ -1042,10 +1073,10 @@ document.addEventListener("mousemove", (e) => {
 
 window.addEventListener("mousedown", (e) => {
   if (e.target.closest(".lil-gui")) return;
+  if (document.getElementById('ballistics-overlay').classList.contains('visible')) return; // ADICIONE
 
   if (document.pointerLockElement !== renderer.domElement) {
     renderer.domElement.requestPointerLock();
-
     return;
   }
 
@@ -1055,6 +1086,10 @@ window.addEventListener("mousedown", (e) => {
 
       window.returnTimer = null;
     }
+
+    trajectorySamples = [];
+    trajectoryTimer = 0;
+    hitAlvo = false;
 
     isFiring = true;
 
@@ -1100,7 +1135,7 @@ window.addEventListener("mousedown", (e) => {
       .subVectors(targetPoint, spawnPosition)
       .normalize();
 
-      console.log(direction);
+    console.log(direction);
 
     projectileBody.velocity.set(
       direction.x * config.v0,
@@ -1177,6 +1212,7 @@ iniciarInterface(config, world, (modo) => {
 // ─── RESET ──────────────────────────────────────────────────────────────────
 
 window.forcarResetDaCena = function () {
+  document.exitPointerLock();
   if (window.returnTimer) {
     clearTimeout(window.returnTimer);
 
