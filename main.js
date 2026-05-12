@@ -23,6 +23,7 @@ let fireSound;
 let trajectorySamples = [];
 let trajectoryTimer = 0;
 let hitAlvo = false;
+let ultimoUpdateChunk = 0;
 
 const flightQuaternion = new THREE.Quaternion();
 
@@ -302,110 +303,101 @@ function buildChunk(chunkX, chunkZ) {
   // GERADOR DE ALVOS (Adaptado para THREE.Group)
   // ==========================================
   // Inicia um array no userData para guardar a física e apagar depois
-  group.userData.bodies = [];
-
-  // Verifica se o chunk atual está na mesma linha (X) da arma do jogador.
-  // Só gera o alvo se a distância lateral for menor que a metade do chunk.
-  // ==========================================
-  // GERADOR DE ALVOS (Dentro de buildChunk)
+ // ==========================================
+  // GERADOR DE ALVOS (Refatorado com Margem de Segurança)
   // ==========================================
   group.userData.bodies = [];
 
+  // 1. Só tenta gerar alvos se o bloco estiver alinhado com o jogador no eixo X
   if (Math.abs(config.startX - worldX) < CHUNK_SIZE / 2) {
+    
 
-    const distanciasAlvos = [worldZ - 100, worldZ - 200];
+    // 👉 Alta frequência de alvos: 70% de chance
+    const chanceDeGerarAlvo = 0.80;
 
-    distanciasAlvos.forEach(z => {
-      if (z > -80) return;
+    if (Math.random() < chanceDeGerarAlvo) {
+      
+      // 👉 Lógica de Espaçamento Mínimo (Anti-aglomeração):
+      // Colocamos uma margem de 30 metros livres no começo e no fim de cada bloco.
+      // Assim, mesmo que dois alvos nasçam seguidos em blocos vizinhos, eles 
+      // NUNCA ficarão a menos de 60 metros de distância um do outro.
+      const margemSeguranca = 30; 
+      const espacoUtil = CHUNK_SIZE - (margemSeguranca * 2); 
+      
+      // Sorteia a posição apenas dentro desse espaço central seguro
+      const zAleatorio = worldZ - (margemSeguranca + (Math.random() * espacoUtil));
+      
+      const distanciasAlvos = [zAleatorio];
 
-      // 1. VISUAL: Modelo em pé e com pivot centralizado
-      let meshAlvo;
+      distanciasAlvos.forEach(z => {
 
-      if (modelTemplates.alvo) {
-        meshAlvo = new THREE.Group();
-        const modeloImportado = modelTemplates.alvo.clone(true);
+        // --- 1. VISUAL DO ALVO ---
+        let meshAlvo;
 
-        // Levanta o modelo
-        modeloImportado.rotation.x = -Math.PI / 2;
+        if (modelTemplates.alvo) {
+          meshAlvo = new THREE.Group();
+          const modeloImportado = modelTemplates.alvo.clone(true);
+          modeloImportado.rotation.x = -Math.PI / 2;
 
-        // Centraliza o pivot no meio do objeto
-        const box = new THREE.Box3().setFromObject(modeloImportado);
-        const center = new THREE.Vector3();
-        box.getCenter(center);
-        modeloImportado.position.sub(center);
+          const box = new THREE.Box3().setFromObject(modeloImportado);
+          const center = new THREE.Vector3();
+          box.getCenter(center);
+          modeloImportado.position.sub(center);
 
-        meshAlvo.add(modeloImportado);
-      } else {
-        const fallbackGeo = new THREE.BoxGeometry(4, 4, 0.5);
-        const fallbackMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-        meshAlvo = new THREE.Mesh(fallbackGeo, fallbackMat);
-        meshAlvo.geometry.center();
-      }
+          meshAlvo.add(modeloImportado);
+          meshAlvo.scale.set(0.5, 0.5, 0.5); 
+        } else {
+          const fallbackGeo = new THREE.BoxGeometry(2, 2, 0.5);
+          const fallbackMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+          meshAlvo = new THREE.Mesh(fallbackGeo, fallbackMat);
+          meshAlvo.geometry.center();
+        }
 
-      // ==========================================
-      // PAINEL COMPLETO DE CONTROLE (Tamanho, Posição e Angulação)
-      // ==========================================
-      const larguraHitbox = 7.0;       // X: Estica para os lados
-      const alturaHitbox = 10.0;        // Y: Estica para cima/baixo
-      const profundidadeHitbox = 0.19;  // Z: Espessura da placa
+        // --- 2. CONFIGURAÇÃO DE HITBOX E POSIÇÃO ---
+        const larguraHitbox = 3.5;       
+        const alturaHitbox = 5.0;        
+        const profundidadeHitbox = 0.19; 
+        const alturaBaseNoChao = 2.5;    
+        const ajusteAlturaHitbox = 0;    
+        const ajusteProfundidade = 0.2;  
+        const grausInclinacao = -25;     
 
-      const alturaBaseNoChao = 2.5;    // Altura onde a imagem do alvo fica no jogo
+        meshAlvo.position.set(config.startX - worldX, alturaBaseNoChao, z - worldZ);
+        group.add(meshAlvo);
 
-      const ajusteAlturaHitbox = 0;    // Sobe ou desce SÓ a física
-      const ajusteProfundidade = 0.2;  // Empurra a física pra frente ou pra trás
+        // --- 3. FÍSICA (CANNON) ---
+        const halfExtents = new CANNON.Vec3(larguraHitbox / 2, alturaHitbox / 2, profundidadeHitbox / 2);
+        const targetShape = new CANNON.Box(halfExtents);
+        const targetBody = new CANNON.Body({ mass: 0, shape: targetShape });
 
-      const grausInclinacao = -25;     // Inclinação do alvo (ex: -10 graus)
-      // ==========================================
+        targetBody.position.set(config.startX, alturaBaseNoChao + ajusteAlturaHitbox, z + ajusteProfundidade);
+        const inclinacaoRadianos = grausInclinacao * (Math.PI / 180);
+        targetBody.quaternion.setFromEuler(inclinacaoRadianos, 0, 0);
 
-      // Coloca o visual no mapa
-      meshAlvo.position.set(config.startX - worldX, alturaBaseNoChao, z - worldZ);
-      group.add(meshAlvo);
+        targetBody.isAlvo = true;
+        targetBody.meshVisual = meshAlvo;
 
-      // 2. FÍSICA: Usando os controles manuais
-      const halfExtents = new CANNON.Vec3(larguraHitbox / 2, alturaHitbox / 2, profundidadeHitbox / 2);
-      const targetShape = new CANNON.Box(halfExtents);
+        world.addBody(targetBody);
+        group.userData.bodies.push(targetBody);
 
-      const targetBody = new CANNON.Body({
-        mass: 0,
-        shape: targetShape,
-      });
+        // --- 4. MODO RAIO-X (DEBUG VISUAL) ---
+        const helperGeo = new THREE.BoxGeometry(larguraHitbox, alturaHitbox, profundidadeHitbox);
+        const helperMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true });
+        const helperMesh = new THREE.Mesh(helperGeo, helperMat);
 
-      // Aplica os offsets de posição globalmente
-      targetBody.position.set(config.startX, alturaBaseNoChao + ajusteAlturaHitbox, z + ajusteProfundidade);
+        helperMesh.position.set(config.startX - worldX, alturaBaseNoChao + ajusteAlturaHitbox, (z - worldZ) + ajusteProfundidade);
+        helperMesh.rotation.x = inclinacaoRadianos;
 
-      // Aplica a inclinação na física
-      const inclinacaoRadianos = grausInclinacao * (Math.PI / 180);
-      targetBody.quaternion.setFromEuler(inclinacaoRadianos, 0, 0);
+        group.add(helperMesh);
+      }); // Fim do forEach
+    } // Fim do if (Math.random)
+  } // Fim do if (Math.abs)
 
-      targetBody.isAlvo = true;
-      targetBody.meshVisual = meshAlvo;
-
-      world.addBody(targetBody);
-      group.userData.bodies.push(targetBody);
-
-      // 3. MODO RAIO-X: Acompanha 100% a física
-      const helperGeo = new THREE.BoxGeometry(larguraHitbox, alturaHitbox, profundidadeHitbox);
-      const helperMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true });
-      const helperMesh = new THREE.Mesh(helperGeo, helperMat);
-
-      // Aplica os mesmos offsets e rotação do Cannon para o Three.js
-      helperMesh.position.set(config.startX - worldX, alturaBaseNoChao + ajusteAlturaHitbox, (z - worldZ) + ajusteProfundidade);
-      helperMesh.rotation.x = inclinacaoRadianos;
-
-      group.add(helperMesh);
-    });
-  }
   group.userData.x = chunkX;
   group.userData.z = chunkZ;
 
   return group;
-
-  group.userData = {
-    x: chunkX,
-    z: chunkZ,
-  };
 }
-
 
 // ─── SPAWN ───────────────────────────────────────────────────────────────────
 
@@ -416,26 +408,47 @@ function spawnChunk(chunkX, chunkZ) {
 
   activeChunks.push(chunk);
 }
-
-// ─── UPDATE DOS CHUNKS ───────────────────────────────────────────────────────
-
 function updateChunks() {
+  // ─── OTIMIZAÇÃO 1: Limita a execução a 4 vezes por segundo (250ms) ───
+  const agora = performance.now();
+  if (agora - ultimoUpdateChunk < 250) return; 
+  ultimoUpdateChunk = agora;
+
   const camX = Math.floor(camera.position.x / CHUNK_SIZE);
   const camZ = Math.floor(camera.position.z / CHUNK_SIZE);
 
-  // REMOVE CHUNKS DISTANTES
+  // ─── A MÁGICA: RAIO DE VISÃO DINÂMICO ─────────────────────────────────
+  let raioVisaoAtual = VIEW_RADIUS; // Começa com o seu tamanho padrão
 
+  // Se a câmera estiver seguindo a bala e ela existir no mundo físico
+  if (cameraTarget === "bullet" && typeof projectileBody !== 'undefined') {
+    const velocidade = projectileBody.velocity.length(); 
+    
+    // Calcula blocos extras com base na força da bala (dividido por 50 para suavizar)
+    const blocosExtras = Math.floor(velocidade / 50);
+    
+    // ─── OTIMIZAÇÃO 2: Trava o raio em no máximo 8 blocos para salvar a CPU ───
+    raioVisaoAtual = Math.min(VIEW_RADIUS + blocosExtras, 8);
+  }
+  // ──────────────────────────────────────────────────────────────────────
+
+  // REMOVE CHUNKS DISTANTES
   for (let i = activeChunks.length - 1; i >= 0; i--) {
     const chunk = activeChunks[i];
 
     const distX = Math.abs(chunk.userData.x - camX);
     const distZ = Math.abs(chunk.userData.z - camZ);
 
-    if (distX > VIEW_RADIUS || distZ > VIEW_RADIUS) {
+    // Usa o raio dinâmico para decidir quem some
+    if (distX > raioVisaoAtual || distZ > raioVisaoAtual) {
       scene.remove(chunk);
+      
+      // Limpa as físicas (Alvos) do Cannon.js para não pesar a memória
       if (chunk.userData.bodies) {
         chunk.userData.bodies.forEach(body => world.removeBody(body));
       }
+      
+      // Limpa os materiais e geometrias do Three.js
       chunk.traverse((child) => {
         if (!child.isMesh) return;
 
@@ -453,9 +466,9 @@ function updateChunks() {
   }
 
   // CRIA NOVOS CHUNKS
-
-  for (let x = -VIEW_RADIUS; x <= VIEW_RADIUS; x++) {
-    for (let z = -VIEW_RADIUS; z <= VIEW_RADIUS; z++) {
+  // Usa o raio dinâmico para criar blocos mais longe
+  for (let x = -raioVisaoAtual; x <= raioVisaoAtual; x++) {
+    for (let z = -raioVisaoAtual; z <= raioVisaoAtual; z++) {
       const targetX = camX + x;
       const targetZ = camZ + z;
 
@@ -469,6 +482,126 @@ function updateChunks() {
     }
   }
 }
+//Versão sem Otimização
+
+// // ─── UPDATE DOS CHUNKS ───────────────────────────────────────────────────────
+// function updateChunks() {
+//   const camX = Math.floor(camera.position.x / CHUNK_SIZE);
+//   const camZ = Math.floor(camera.position.z / CHUNK_SIZE);
+
+//   // ─── A MÁGICA: RAIO DE VISÃO DINÂMICO ─────────────────────────────────
+//   let raioVisaoAtual = VIEW_RADIUS; // Começa com o seu tamanho padrão
+
+//   // Se a câmera estiver seguindo a bala e ela existir no mundo físico
+//   if (cameraTarget === "bullet" && typeof projectileBody !== 'undefined') {
+//     const velocidade = projectileBody.velocity.length(); 
+    
+//     // Calcula blocos extras com base na força da bala
+//     const blocosExtras = Math.floor(velocidade / 25);
+//     raioVisaoAtual = VIEW_RADIUS + blocosExtras;
+//   }
+//   // ──────────────────────────────────────────────────────────────────────
+
+//   // REMOVE CHUNKS DISTANTES
+//   for (let i = activeChunks.length - 1; i >= 0; i--) {
+//     const chunk = activeChunks[i];
+
+//     const distX = Math.abs(chunk.userData.x - camX);
+//     const distZ = Math.abs(chunk.userData.z - camZ);
+
+//     // Usa o raio dinâmico para decidir quem some
+//     if (distX > raioVisaoAtual || distZ > raioVisaoAtual) {
+//       scene.remove(chunk);
+      
+//       // Limpa as físicas (Alvos) do Cannon.js para não pesar a memória
+//       if (chunk.userData.bodies) {
+//         chunk.userData.bodies.forEach(body => world.removeBody(body));
+//       }
+      
+//       // Limpa os materiais e geometrias do Three.js
+//       chunk.traverse((child) => {
+//         if (!child.isMesh) return;
+
+//         child.geometry?.dispose();
+
+//         if (Array.isArray(child.material)) {
+//           child.material.forEach((m) => m.dispose());
+//         } else {
+//           child.material?.dispose();
+//         }
+//       });
+
+//       activeChunks.splice(i, 1);
+//     }
+//   }
+
+//   // CRIA NOVOS CHUNKS
+//   // Usa o raio dinâmico para criar blocos mais longe
+//   for (let x = -raioVisaoAtual; x <= raioVisaoAtual; x++) {
+//     for (let z = -raioVisaoAtual; z <= raioVisaoAtual; z++) {
+//       const targetX = camX + x;
+//       const targetZ = camZ + z;
+
+//       const exists = activeChunks.some(
+//         (chunk) => chunk.userData.x === targetX && chunk.userData.z === targetZ,
+//       );
+
+//       if (!exists) {
+//         spawnChunk(targetX, targetZ);
+//       }
+//     }
+//   }
+// }
+// function updateChunks() {
+//   const camX = Math.floor(camera.position.x / CHUNK_SIZE);
+//   const camZ = Math.floor(camera.position.z / CHUNK_SIZE);
+
+//   // REMOVE CHUNKS DISTANTES
+
+//   for (let i = activeChunks.length - 1; i >= 0; i--) {
+//     const chunk = activeChunks[i];
+
+//     const distX = Math.abs(chunk.userData.x - camX);
+//     const distZ = Math.abs(chunk.userData.z - camZ);
+
+//     if (distX > VIEW_RADIUS || distZ > VIEW_RADIUS) {
+//       scene.remove(chunk);
+//       if (chunk.userData.bodies) {
+//         chunk.userData.bodies.forEach(body => world.removeBody(body));
+//       }
+//       chunk.traverse((child) => {
+//         if (!child.isMesh) return;
+
+//         child.geometry?.dispose();
+
+//         if (Array.isArray(child.material)) {
+//           child.material.forEach((m) => m.dispose());
+//         } else {
+//           child.material?.dispose();
+//         }
+//       });
+
+//       activeChunks.splice(i, 1);
+//     }
+//   }
+
+//   // CRIA NOVOS CHUNKS
+
+//   for (let x = -VIEW_RADIUS; x <= VIEW_RADIUS; x++) {
+//     for (let z = -VIEW_RADIUS; z <= VIEW_RADIUS; z++) {
+//       const targetX = camX + x;
+//       const targetZ = camZ + z;
+
+//       const exists = activeChunks.some(
+//         (chunk) => chunk.userData.x === targetX && chunk.userData.z === targetZ,
+//       );
+
+//       if (!exists) {
+//         spawnChunk(targetX, targetZ);
+//       }
+//     }
+//   }
+// }
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 
 async function init() {
@@ -601,7 +734,9 @@ async function init() {
 
   loadModel();
   loadPistol();
-
+console.log('[Sistema] Pré-compilando shaders para evitar lag no 1º tiro...');
+  renderer.compile(scene, camera); // <--- A MÁGICA ACONTECE AQUI
+  
   animate();
 }
 
