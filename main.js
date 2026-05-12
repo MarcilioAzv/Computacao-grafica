@@ -738,7 +738,6 @@ console.log('[Sistema] Pré-compilando shaders para evitar lag no 1º tiro...');
   renderer.compile(scene, camera); // <--- A MÁGICA ACONTECE AQUI
   
   animate();
-  animate();
 }
 
 // ─── PISTOLA ─────────────────────────────────────────────────────────────────
