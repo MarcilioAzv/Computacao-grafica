@@ -1,12 +1,14 @@
 <!DOCTYPE html>
 <html lang="pt-br">
+
 <head>
     <meta charset="UTF-8">
     <title>Jogo de Física - Three.js</title>
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
-<div id="crosshair" style="
+    <div id="crosshair" style="
     position: fixed;
     top: 50%;
     left: 50%;
@@ -19,9 +21,66 @@
     align-items: center;
     justify-content: center;
 ">
-    <div style="width: 4px; height: 4px; background-color: red; border-radius: 50%;"></div>
-    
-    <div style="position: absolute; width: 2px; height: 10px; background-color: lime; top: -12px;"></div> <div style="position: absolute; width: 2px; height: 10px; background-color: lime; bottom: -12px;"></div> <div style="position: absolute; width: 10px; height: 2px; background-color: lime; left: -12px;"></div> <div style="position: absolute; width: 10px; height: 2px; background-color: lime; right: -12px;"></div> </div>
+        <div style="width: 4px; height: 4px; background-color: red; border-radius: 50%;"></div>
+
+        <div style="position: absolute; width: 2px; height: 10px; background-color: lime; top: -12px;"></div>
+        <div style="position: absolute; width: 2px; height: 10px; background-color: lime; bottom: -12px;"></div>
+        <div style="position: absolute; width: 10px; height: 2px; background-color: lime; left: -12px;"></div>
+        <div style="position: absolute; width: 10px; height: 2px; background-color: lime; right: -12px;"></div>
+    </div>
+    <!-- RELATÓRIO BALÍSTICO -->
+    <div id="ballistics-overlay">
+        <div id="ballistics-panel">
+            <div class="bp-header">
+                <div>
+                    <h2>relatório balístico</h2>
+                    <span id="bp-subtitle">trajetória finalizada</span>
+                </div>
+                <button class="bp-close"
+                    onclick="event.stopPropagation(); document.getElementById('ballistics-overlay').classList.remove('visible')">
+                    fechar
+                </button>
+            </div>
+            <div class="bp-metrics">
+                <div class="bp-metric">
+                    <div class="label">distância total</div>
+                    <div class="value" id="bp-distance">—</div><span class="unit">m</span>
+                </div>
+                <div class="bp-metric">
+                    <div class="label">altura máx.</div>
+                    <div class="value" id="bp-maxheight">—</div><span class="unit">m</span>
+                </div>
+                <div class="bp-metric">
+                    <div class="label">vel. inicial</div>
+                    <div class="value" id="bp-v0">—</div><span class="unit">m/s</span>
+                </div>
+                <div class="bp-metric">
+                    <div class="label">resultado</div>
+                    <div class="value" id="bp-hit" style="font-size:13px;padding-top:4px">—</div>
+                </div>
+            </div>
+            <div style="padding: 0 20px 4px;">
+                <div class="bp-section-title" style="padding-left:0">distância × altura</div>
+                <div style="height: 180px; background:#0d0d1f; border-radius:8px; padding:10px;">
+                    <canvas id="bp-chart-alt"></canvas>
+                </div>
+            </div>
+
+            <div style="padding: 8px 20px 4px;">
+                <div class="bp-section-title" style="padding-left:0">tempo × velocidade</div>
+                <div style="height: 180px; background:#0d0d1f; border-radius:8px; padding:10px;">
+                    <canvas id="bp-chart-vel"></canvas>
+                </div>
+            </div>
+            <div class="bp-footer">
+                <span class="note" id="bp-time-note">tempo de voo: —</span>
+                <button class="bp-btn-reset"
+                    onclick="event.stopPropagation(); document.getElementById('ballistics-overlay').classList.remove('visible'); if(window.forcarResetDaCena) window.forcarResetDaCena();">
+                    ↺ atirar novamente
+                </button>
+            </div>
+        </div>
+    </div>
     <!-- Import Maps ajuda o navegador a entender o Three.js sem precisar de instalação complexa agora -->
     <script type="importmap">
         {
@@ -31,7 +90,152 @@
             }
         }
     </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+    <script>
+        let chartAlt = null;
+        let chartVel = null;
+
+        window.mostrarRelatorio = function (samples, acertou) {
+            if (!samples || samples.length === 0) return;
+
+            const first = samples[0];
+            const last = samples[samples.length - 1];
+            const maxH = Math.max(...samples.map(s => s.y));
+            const totalDist = Math.abs(last.z - first.z);
+            const totalTime = last.t;
+
+            document.getElementById('bp-distance').textContent = totalDist.toFixed(1);
+            document.getElementById('bp-maxheight').textContent = maxH.toFixed(1);
+            document.getElementById('bp-v0').textContent = first.spd.toFixed(1);
+            document.getElementById('bp-time-note').textContent = 'tempo de voo: ' + totalTime.toFixed(2) + 's';
+            document.getElementById('bp-subtitle').textContent = new Date().toLocaleTimeString('pt-BR');
+
+            const hitEl = document.getElementById('bp-hit');
+            hitEl.innerHTML = acertou
+                ? '<span class="hit-badge">✓ acerto</span>'
+                : '<span class="miss-badge">✗ erro</span>';
+
+            // Destrói gráficos anteriores se existirem
+            if (chartAlt) { chartAlt.destroy(); chartAlt = null; }
+            if (chartVel) { chartVel.destroy(); chartVel = null; }
+
+            const distBase = Math.abs(first.z);
+
+            const dataAlt = samples.map(s => ({
+                x: parseFloat(Math.abs(Math.abs(s.z) - distBase).toFixed(2)),
+                y: parseFloat(s.y.toFixed(2))
+            }));
+
+            const dataVel = samples.map(s => ({
+                x: parseFloat(s.t.toFixed(2)),
+                y: parseFloat(s.spd.toFixed(2))
+            }));
+
+            const commonOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 400 },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#1a1a2e',
+                        borderColor: '#378ADD',
+                        borderWidth: 1,
+                        titleColor: '#85B7EB',
+                        bodyColor: '#ddd',
+                        padding: 10
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'linear',
+                        grid: { color: 'rgba(255,255,255,0.07)' },
+                        ticks: { color: '#888', font: { size: 11 } },
+                        border: { color: '#333' }
+                    },
+                    y: {
+                        grid: { color: 'rgba(255,255,255,0.07)' },
+                        ticks: { color: '#888', font: { size: 11 } },
+                        border: { color: '#333' }
+                    }
+                }
+            };
+
+            chartAlt = new Chart(document.getElementById('bp-chart-alt'), {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        data: dataAlt,
+                        borderColor: '#378ADD',
+                        backgroundColor: 'rgba(55,138,221,0.12)',
+                        borderWidth: 2,
+                        pointRadius: 2,
+                        pointHoverRadius: 5,
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    ...commonOptions,
+                    plugins: {
+                        ...commonOptions.plugins,
+                        tooltip: {
+                            ...commonOptions.plugins.tooltip,
+                            callbacks: {
+                                title: items => `distância: ${items[0].parsed.x} m`,
+                                label: item => `altura: ${item.parsed.y} m`
+                            }
+                        }
+                    },
+                    scales: {
+                        ...commonOptions.scales,
+                        x: { ...commonOptions.scales.x, title: { display: true, text: 'distância (m)', color: '#888', font: { size: 11 } } },
+                        y: { ...commonOptions.scales.y, title: { display: true, text: 'altura (m)', color: '#888', font: { size: 11 } } }
+                    }
+                }
+            });
+
+            chartVel = new Chart(document.getElementById('bp-chart-vel'), {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        data: dataVel,
+                        borderColor: '#1D9E75',
+                        backgroundColor: 'rgba(29,158,117,0.12)',
+                        borderWidth: 2,
+                        pointRadius: 2,
+                        pointHoverRadius: 5,
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    ...commonOptions,
+                    plugins: {
+                        ...commonOptions.plugins,
+                        tooltip: {
+                            ...commonOptions.plugins.tooltip,
+                            callbacks: {
+                                title: items => `tempo: ${items[0].parsed.x} s`,
+                                label: item => `velocidade: ${item.parsed.y} m/s`
+                            }
+                        }
+                    },
+                    scales: {
+                        ...commonOptions.scales,
+                        x: { ...commonOptions.scales.x, title: { display: true, text: 'tempo (s)', color: '#888', font: { size: 11 } } },
+                        y: { ...commonOptions.scales.y, title: { display: true, text: 'velocidade (m/s)', color: '#888', font: { size: 11 } } }
+                    }
+                }
+            });
+
+            document.getElementById('ballistics-overlay').classList.add('visible');
+        };
+    </script>
     <script type="module" src="main.js"></script>
     <script type="module" src="interface.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </body>
+
 </html>
