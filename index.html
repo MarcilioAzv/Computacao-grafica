@@ -59,19 +59,18 @@
                     <div class="value" id="bp-hit" style="font-size:13px;padding-top:4px">—</div>
                 </div>
             </div>
-            <div class="bp-section-title">trajetória por intervalo</div>
-            <div style="overflow-x:auto;padding-bottom:4px;">
-                <table class="bp-table">
-                    <thead>
-                        <tr>
-                            <th>ponto</th>
-                            <th>dist. Z (m)</th>
-                            <th>altura (m)</th>
-                            <th>velocidade (m/s)</th>
-                        </tr>
-                    </thead>
-                    <tbody id="bp-tbody"></tbody>
-                </table>
+            <div style="padding: 0 20px 4px;">
+                <div class="bp-section-title" style="padding-left:0">distância × altura</div>
+                <div style="height: 180px; background:#0d0d1f; border-radius:8px; padding:10px;">
+                    <canvas id="bp-chart-alt"></canvas>
+                </div>
+            </div>
+
+            <div style="padding: 8px 20px 4px;">
+                <div class="bp-section-title" style="padding-left:0">tempo × velocidade</div>
+                <div style="height: 180px; background:#0d0d1f; border-radius:8px; padding:10px;">
+                    <canvas id="bp-chart-vel"></canvas>
+                </div>
             </div>
             <div class="bp-footer">
                 <span class="note" id="bp-time-note">tempo de voo: —</span>
@@ -91,11 +90,17 @@
             }
         }
     </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
     <script>
+        let chartAlt = null;
+        let chartVel = null;
+
         window.mostrarRelatorio = function (samples, acertou) {
             if (!samples || samples.length === 0) return;
-            const last = samples[samples.length - 1];
+
             const first = samples[0];
+            const last = samples[samples.length - 1];
             const maxH = Math.max(...samples.map(s => s.y));
             const totalDist = Math.abs(last.z - first.z);
             const totalTime = last.t;
@@ -111,35 +116,126 @@
                 ? '<span class="hit-badge">✓ acerto</span>'
                 : '<span class="miss-badge">✗ erro</span>';
 
-            const maxSpd = Math.max(...samples.map(s => s.spd));
-            const maxY = Math.max(...samples.map(s => s.y)) || 1;
-            const maxZ = Math.max(...samples.map(s => Math.abs(s.z))) || 1;
+            // Destrói gráficos anteriores se existirem
+            if (chartAlt) { chartAlt.destroy(); chartAlt = null; }
+            if (chartVel) { chartVel.destroy(); chartVel = null; }
 
-            const step = Math.max(1, Math.floor(samples.length / 10));
-            const rows = [];
-            for (let i = 0; i < samples.length; i += step) rows.push(samples[i]);
-            if (rows[rows.length - 1] !== samples[samples.length - 1]) rows.push(samples[samples.length - 1]);
+            const distBase = Math.abs(first.z);
 
-            const tbody = document.getElementById('bp-tbody');
-            tbody.innerHTML = rows.map((s, idx) => {
-                const barZ = Math.round((Math.abs(s.z) / maxZ) * 60);
-                const barY = Math.round((s.y / maxY) * 60);
-                const barSpd = Math.round((s.spd / maxSpd) * 60);
-                const label = idx === 0 ? 'lançamento' : idx === rows.length - 1 ? 'impacto' : `t=${s.t.toFixed(1)}s`;
-                return `<tr>
-                <td>${label}</td>
-                <td><div class="bar-wrap">${Math.abs(s.z).toFixed(1)}<div class="bar" style="width:${barZ}px"></div></div></td>
-                <td><div class="bar-wrap">${s.y.toFixed(1)}<div class="bar alt" style="width:${barY}px"></div></div></td>
-                <td><div class="bar-wrap">${s.spd.toFixed(1)}<div class="bar warn" style="width:${barSpd}px"></div></div></td>
-                </tr>`;
-            }).join('');
+            const dataAlt = samples.map(s => ({
+                x: parseFloat(Math.abs(Math.abs(s.z) - distBase).toFixed(2)),
+                y: parseFloat(s.y.toFixed(2))
+            }));
+
+            const dataVel = samples.map(s => ({
+                x: parseFloat(s.t.toFixed(2)),
+                y: parseFloat(s.spd.toFixed(2))
+            }));
+
+            const commonOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 400 },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#1a1a2e',
+                        borderColor: '#378ADD',
+                        borderWidth: 1,
+                        titleColor: '#85B7EB',
+                        bodyColor: '#ddd',
+                        padding: 10
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'linear',
+                        grid: { color: 'rgba(255,255,255,0.07)' },
+                        ticks: { color: '#888', font: { size: 11 } },
+                        border: { color: '#333' }
+                    },
+                    y: {
+                        grid: { color: 'rgba(255,255,255,0.07)' },
+                        ticks: { color: '#888', font: { size: 11 } },
+                        border: { color: '#333' }
+                    }
+                }
+            };
+
+            chartAlt = new Chart(document.getElementById('bp-chart-alt'), {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        data: dataAlt,
+                        borderColor: '#378ADD',
+                        backgroundColor: 'rgba(55,138,221,0.12)',
+                        borderWidth: 2,
+                        pointRadius: 2,
+                        pointHoverRadius: 5,
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    ...commonOptions,
+                    plugins: {
+                        ...commonOptions.plugins,
+                        tooltip: {
+                            ...commonOptions.plugins.tooltip,
+                            callbacks: {
+                                title: items => `distância: ${items[0].parsed.x} m`,
+                                label: item => `altura: ${item.parsed.y} m`
+                            }
+                        }
+                    },
+                    scales: {
+                        ...commonOptions.scales,
+                        x: { ...commonOptions.scales.x, title: { display: true, text: 'distância (m)', color: '#888', font: { size: 11 } } },
+                        y: { ...commonOptions.scales.y, title: { display: true, text: 'altura (m)', color: '#888', font: { size: 11 } } }
+                    }
+                }
+            });
+
+            chartVel = new Chart(document.getElementById('bp-chart-vel'), {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        data: dataVel,
+                        borderColor: '#1D9E75',
+                        backgroundColor: 'rgba(29,158,117,0.12)',
+                        borderWidth: 2,
+                        pointRadius: 2,
+                        pointHoverRadius: 5,
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    ...commonOptions,
+                    plugins: {
+                        ...commonOptions.plugins,
+                        tooltip: {
+                            ...commonOptions.plugins.tooltip,
+                            callbacks: {
+                                title: items => `tempo: ${items[0].parsed.x} s`,
+                                label: item => `velocidade: ${item.parsed.y} m/s`
+                            }
+                        }
+                    },
+                    scales: {
+                        ...commonOptions.scales,
+                        x: { ...commonOptions.scales.x, title: { display: true, text: 'tempo (s)', color: '#888', font: { size: 11 } } },
+                        y: { ...commonOptions.scales.y, title: { display: true, text: 'velocidade (m/s)', color: '#888', font: { size: 11 } } }
+                    }
+                }
+            });
 
             document.getElementById('ballistics-overlay').classList.add('visible');
         };
-
     </script>
     <script type="module" src="main.js"></script>
     <script type="module" src="interface.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </body>
 
 </html>
