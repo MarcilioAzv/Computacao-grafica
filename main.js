@@ -23,6 +23,7 @@ let fireSound;
 let trajectorySamples = [];
 let trajectoryTimer = 0;
 let hitAlvo = false;
+let ultimoUpdateChunk = 0;
 
 const flightQuaternion = new THREE.Quaternion();
 
@@ -407,26 +408,47 @@ function spawnChunk(chunkX, chunkZ) {
 
   activeChunks.push(chunk);
 }
-
-// ─── UPDATE DOS CHUNKS ───────────────────────────────────────────────────────
-
 function updateChunks() {
+  // ─── OTIMIZAÇÃO 1: Limita a execução a 4 vezes por segundo (250ms) ───
+  const agora = performance.now();
+  if (agora - ultimoUpdateChunk < 250) return; 
+  ultimoUpdateChunk = agora;
+
   const camX = Math.floor(camera.position.x / CHUNK_SIZE);
   const camZ = Math.floor(camera.position.z / CHUNK_SIZE);
 
-  // REMOVE CHUNKS DISTANTES
+  // ─── A MÁGICA: RAIO DE VISÃO DINÂMICO ─────────────────────────────────
+  let raioVisaoAtual = VIEW_RADIUS; // Começa com o seu tamanho padrão
 
+  // Se a câmera estiver seguindo a bala e ela existir no mundo físico
+  if (cameraTarget === "bullet" && typeof projectileBody !== 'undefined') {
+    const velocidade = projectileBody.velocity.length(); 
+    
+    // Calcula blocos extras com base na força da bala (dividido por 50 para suavizar)
+    const blocosExtras = Math.floor(velocidade / 50);
+    
+    // ─── OTIMIZAÇÃO 2: Trava o raio em no máximo 8 blocos para salvar a CPU ───
+    raioVisaoAtual = Math.min(VIEW_RADIUS + blocosExtras, 8);
+  }
+  // ──────────────────────────────────────────────────────────────────────
+
+  // REMOVE CHUNKS DISTANTES
   for (let i = activeChunks.length - 1; i >= 0; i--) {
     const chunk = activeChunks[i];
 
     const distX = Math.abs(chunk.userData.x - camX);
     const distZ = Math.abs(chunk.userData.z - camZ);
 
-    if (distX > VIEW_RADIUS || distZ > VIEW_RADIUS) {
+    // Usa o raio dinâmico para decidir quem some
+    if (distX > raioVisaoAtual || distZ > raioVisaoAtual) {
       scene.remove(chunk);
+      
+      // Limpa as físicas (Alvos) do Cannon.js para não pesar a memória
       if (chunk.userData.bodies) {
         chunk.userData.bodies.forEach(body => world.removeBody(body));
       }
+      
+      // Limpa os materiais e geometrias do Three.js
       chunk.traverse((child) => {
         if (!child.isMesh) return;
 
@@ -444,9 +466,9 @@ function updateChunks() {
   }
 
   // CRIA NOVOS CHUNKS
-
-  for (let x = -VIEW_RADIUS; x <= VIEW_RADIUS; x++) {
-    for (let z = -VIEW_RADIUS; z <= VIEW_RADIUS; z++) {
+  // Usa o raio dinâmico para criar blocos mais longe
+  for (let x = -raioVisaoAtual; x <= raioVisaoAtual; x++) {
+    for (let z = -raioVisaoAtual; z <= raioVisaoAtual; z++) {
       const targetX = camX + x;
       const targetZ = camZ + z;
 
@@ -460,6 +482,126 @@ function updateChunks() {
     }
   }
 }
+//Versão sem Otimização
+
+// // ─── UPDATE DOS CHUNKS ───────────────────────────────────────────────────────
+// function updateChunks() {
+//   const camX = Math.floor(camera.position.x / CHUNK_SIZE);
+//   const camZ = Math.floor(camera.position.z / CHUNK_SIZE);
+
+//   // ─── A MÁGICA: RAIO DE VISÃO DINÂMICO ─────────────────────────────────
+//   let raioVisaoAtual = VIEW_RADIUS; // Começa com o seu tamanho padrão
+
+//   // Se a câmera estiver seguindo a bala e ela existir no mundo físico
+//   if (cameraTarget === "bullet" && typeof projectileBody !== 'undefined') {
+//     const velocidade = projectileBody.velocity.length(); 
+    
+//     // Calcula blocos extras com base na força da bala
+//     const blocosExtras = Math.floor(velocidade / 25);
+//     raioVisaoAtual = VIEW_RADIUS + blocosExtras;
+//   }
+//   // ──────────────────────────────────────────────────────────────────────
+
+//   // REMOVE CHUNKS DISTANTES
+//   for (let i = activeChunks.length - 1; i >= 0; i--) {
+//     const chunk = activeChunks[i];
+
+//     const distX = Math.abs(chunk.userData.x - camX);
+//     const distZ = Math.abs(chunk.userData.z - camZ);
+
+//     // Usa o raio dinâmico para decidir quem some
+//     if (distX > raioVisaoAtual || distZ > raioVisaoAtual) {
+//       scene.remove(chunk);
+      
+//       // Limpa as físicas (Alvos) do Cannon.js para não pesar a memória
+//       if (chunk.userData.bodies) {
+//         chunk.userData.bodies.forEach(body => world.removeBody(body));
+//       }
+      
+//       // Limpa os materiais e geometrias do Three.js
+//       chunk.traverse((child) => {
+//         if (!child.isMesh) return;
+
+//         child.geometry?.dispose();
+
+//         if (Array.isArray(child.material)) {
+//           child.material.forEach((m) => m.dispose());
+//         } else {
+//           child.material?.dispose();
+//         }
+//       });
+
+//       activeChunks.splice(i, 1);
+//     }
+//   }
+
+//   // CRIA NOVOS CHUNKS
+//   // Usa o raio dinâmico para criar blocos mais longe
+//   for (let x = -raioVisaoAtual; x <= raioVisaoAtual; x++) {
+//     for (let z = -raioVisaoAtual; z <= raioVisaoAtual; z++) {
+//       const targetX = camX + x;
+//       const targetZ = camZ + z;
+
+//       const exists = activeChunks.some(
+//         (chunk) => chunk.userData.x === targetX && chunk.userData.z === targetZ,
+//       );
+
+//       if (!exists) {
+//         spawnChunk(targetX, targetZ);
+//       }
+//     }
+//   }
+// }
+// function updateChunks() {
+//   const camX = Math.floor(camera.position.x / CHUNK_SIZE);
+//   const camZ = Math.floor(camera.position.z / CHUNK_SIZE);
+
+//   // REMOVE CHUNKS DISTANTES
+
+//   for (let i = activeChunks.length - 1; i >= 0; i--) {
+//     const chunk = activeChunks[i];
+
+//     const distX = Math.abs(chunk.userData.x - camX);
+//     const distZ = Math.abs(chunk.userData.z - camZ);
+
+//     if (distX > VIEW_RADIUS || distZ > VIEW_RADIUS) {
+//       scene.remove(chunk);
+//       if (chunk.userData.bodies) {
+//         chunk.userData.bodies.forEach(body => world.removeBody(body));
+//       }
+//       chunk.traverse((child) => {
+//         if (!child.isMesh) return;
+
+//         child.geometry?.dispose();
+
+//         if (Array.isArray(child.material)) {
+//           child.material.forEach((m) => m.dispose());
+//         } else {
+//           child.material?.dispose();
+//         }
+//       });
+
+//       activeChunks.splice(i, 1);
+//     }
+//   }
+
+//   // CRIA NOVOS CHUNKS
+
+//   for (let x = -VIEW_RADIUS; x <= VIEW_RADIUS; x++) {
+//     for (let z = -VIEW_RADIUS; z <= VIEW_RADIUS; z++) {
+//       const targetX = camX + x;
+//       const targetZ = camZ + z;
+
+//       const exists = activeChunks.some(
+//         (chunk) => chunk.userData.x === targetX && chunk.userData.z === targetZ,
+//       );
+
+//       if (!exists) {
+//         spawnChunk(targetX, targetZ);
+//       }
+//     }
+//   }
+// }
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 
 async function init() {
@@ -592,7 +734,10 @@ async function init() {
 
   loadModel();
   loadPistol();
-
+console.log('[Sistema] Pré-compilando shaders para evitar lag no 1º tiro...');
+  renderer.compile(scene, camera); // <--- A MÁGICA ACONTECE AQUI
+  
+  animate();
   animate();
 }
 
