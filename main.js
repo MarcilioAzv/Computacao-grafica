@@ -88,30 +88,23 @@ const pathMaterial = new THREE.MeshStandardMaterial({
 
 async function preloadChunkModels() {
 
-  // Crie o objeto se ele não existir solto no topo do código
   if (typeof window.modelTemplates === 'undefined') window.modelTemplates = {};
 
-  // Carrega o material e depois o objeto
   const mtlLoader = new MTLLoader();
-  mtlLoader.setPath('./assets/45/'); // MUDE AQUI PARA A SUA PASTA
+  mtlLoader.setPath('./assets/45/');
 
   mtlLoader.load('alvo1.mtl', (materials) => {
     materials.preload();
 
     const objLoader = new OBJLoader();
     objLoader.setMaterials(materials);
-    objLoader.setPath('./assets/45/'); // MUDE AQUI TAMBÉM
+    objLoader.setPath('./assets/45/');
 
     objLoader.load('alvo1obj.obj', (object) => {
-      // Centraliza o modelo matematicamente para o Cannon.js entender
       const box = new THREE.Box3().setFromObject(object);
       const center = box.getCenter(new THREE.Vector3());
       object.position.sub(center);
-
-      // Ajuste a escala se o modelo vier gigante ou minúsculo
       object.scale.set(0.1, 0.1, 0.1);
-
-      // Salva na memória global para clonar depois
       modelTemplates.alvo = object;
     });
   });
@@ -125,27 +118,16 @@ async function preloadChunkModels() {
 
       mtlLoader.load('alvo1.mtl', (materials) => {
         materials.preload();
-
         const objLoader = new OBJLoader();
         objLoader.setMaterials(materials);
         objLoader.setPath('./assets/45/');
-
         objLoader.load('alvo1obj.obj', (object) => {
-
-          // 1. Calcula o centro enquanto o objeto ainda é gigante
           const box = new THREE.Box3().setFromObject(object);
           const center = box.getCenter(new THREE.Vector3());
-
-          // 2. Move o objeto para ficar perfeitamente no eixo zero
           object.position.set(-center.x, -box.min.y, -center.z);
-
-          // 3. Cria o "Pacote Invisível" e coloca o objeto dentro
           const pacote = new THREE.Group();
           pacote.add(object);
-
-          // 4. Encolhe o PACOTE (isso preserva o centro matematicamente perfeito)
           pacote.scale.set(0.1, 0.1, 0.1);
-
           modelTemplates.alvo = pacote;
           resolve();
         });
@@ -154,7 +136,6 @@ async function preloadChunkModels() {
   };
 
   const loader = new GLTFLoader();
-
   const models = [
     { key: "ground", path: "./assets/models/ground_grass.glb" },
     { key: "plant", path: "./assets/models/plant_flatShort.glb" },
@@ -207,10 +188,8 @@ function seedDecorations(chunkGroup) {
 
         localX = (Math.random() * 2 - 1) * half;
         localZ = (Math.random() * 2 - 1) * half;
-
         const worldPosX = chunkGroup.position.x + localX;
         const worldPosZ = chunkGroup.position.z + localZ;
-
         const corridorWidth = 30;
         const spawnLineX = -40;
         const insideCorridor = Math.abs(worldPosX - spawnLineX) < corridorWidth;
@@ -231,7 +210,6 @@ function seedDecorations(chunkGroup) {
       clone.scale.setScalar(
         scaleRange[0] + Math.random() * (scaleRange[1] - scaleRange[0]),
       );
-
       chunkGroup.add(clone);
     }
   }
@@ -298,17 +276,7 @@ function buildChunk(chunkX, chunkZ) {
 
 
   seedDecorations(group);
-  // ==========================================
-  // GERADOR DE ALVOS (Adaptado para THREE.Group)
-  // ==========================================
-  // Inicia um array no userData para guardar a física e apagar depois
   group.userData.bodies = [];
-
-  // Verifica se o chunk atual está na mesma linha (X) da arma do jogador.
-  // Só gera o alvo se a distância lateral for menor que a metade do chunk.
-  // ==========================================
-  // GERADOR DE ALVOS (Dentro de buildChunk)
-  // ==========================================
   group.userData.bodies = [];
 
 if (window.Alvos !== false && Math.abs(config.startX - worldX) < CHUNK_SIZE / 2) {
@@ -321,18 +289,12 @@ if (window.Alvos !== false && Math.abs(config.startX - worldX) < CHUNK_SIZE / 2)
     Math.floor(d / CHUNK_SIZE) === Math.floor(-worldZ / CHUNK_SIZE)).map(d => -d);
     distanciasAlvos.forEach(z => {
       if (z > -10) return;
-
-      // 1. VISUAL: Modelo em pé e com pivot centralizado
       let meshAlvo;
 
       if (modelTemplates.alvo) {
         meshAlvo = new THREE.Group();
         const modeloImportado = modelTemplates.alvo.clone(true);
-
-        // Levanta o modelo
         modeloImportado.rotation.x = -Math.PI / 2;
-
-        // Centraliza o pivot no meio do objeto
         const box = new THREE.Box3().setFromObject(modeloImportado);
         const center = new THREE.Vector3();
         box.getCenter(center);
@@ -345,30 +307,21 @@ if (window.Alvos !== false && Math.abs(config.startX - worldX) < CHUNK_SIZE / 2)
         meshAlvo = new THREE.Mesh(fallbackGeo, fallbackMat);
         meshAlvo.geometry.center();
       }
-
-      // ==========================================
-      // PAINEL COMPLETO DE CONTROLE (Tamanho, Posição e Angulação)
-      // ==========================================
-
-      const alturaBaseNoChao = 2.5;    // Altura onde a imagem do alvo fica no jogo
-      const ajusteAlturaHitbox = -2;    // Sobe ou desce SÓ a física
-      const ajusteProfundidade = 0.1;  // Empurra a física pra frente ou pra trás
-      const grausInclinacao = -25;     // Inclinação do alvo (ex: -10 graus)
-      // ==========================================
-
-      // Coloca o visual no mapa
+      const alturaBaseNoChao = 2.5;
+      const ajusteAlturaHitbox = -2;
+      const ajusteProfundidade = 0.1;
+      const grausInclinacao = -25;
       meshAlvo.position.set(config.startX - worldX, alturaBaseNoChao, z - worldZ);
       group.add(meshAlvo);
 
-      // Calcula o tamanho real do modelo visual
 const boxSize = new THREE.Box3().setFromObject(meshAlvo);
 const tamanho = new THREE.Vector3();
 boxSize.getSize(tamanho);
 
-// Usa o tamanho real como hitbox
-const larguraHitbox = tamanho.x * 0.85;   // reduz 20% nas laterais
-const alturaHitbox = tamanho.y * 1.50;    // reduz 20% na altura
-const profundidadeHitbox = tamanho.z * 0.5; // reduz 50% na profundidade
+
+const larguraHitbox = tamanho.x * 0.85;
+const alturaHitbox = tamanho.y * 1.50;
+const profundidadeHitbox = tamanho.z * 0.5;
 
 console.log('Hitbox calculada:', larguraHitbox, alturaHitbox, profundidadeHitbox);
 
@@ -379,11 +332,7 @@ const targetShape = new CANNON.Box(halfExtents);
         mass: 0,
         shape: targetShape,
       });
-
-      // Aplica os offsets de posição globalmente
       targetBody.position.set(config.startX, alturaBaseNoChao + ajusteAlturaHitbox, z + ajusteProfundidade);
-
-      // Aplica a inclinação na física
       const inclinacaoRadianos = grausInclinacao * (Math.PI / 180);
       targetBody.quaternion.setFromEuler(inclinacaoRadianos, 0, 0);
 
@@ -448,9 +397,9 @@ function updateChunks() {
         }
     }
 
-    const raioLateral = 7;  // ← chunks pros lados (X)
-    const raioFrente = 10;  // ← chunks pra frente (Z)
-    const raioAtras = 2;    // ← chunks pra trás (Z)
+    const raioLateral = 7;
+    const raioFrente = 10;
+    const raioAtras = 2;
 
     for (let x = -raioLateral; x <= raioLateral; x++) {
         for (let z = -raioFrente; z <= raioAtras; z++) {
@@ -470,9 +419,6 @@ function updateChunks() {
 
 async function init() {
   scene = new THREE.Scene();
-
-  // SKY DO PRIMEIRO CÓDIGO
-
   const sky = new Sky();
   sky.scale.setScalar(450000);
   scene.add(sky);
@@ -588,16 +534,11 @@ async function init() {
 
   // ─── SISTEMA PROCEDURAL ────────────────────────────────────────────────
 
-  await preloadChunkModels(); // Carrega o chão e árvores (sua função original)
-  await preloadAlvo();        // Carrega o alvo (a função nova)
-
-  updateChunks();             // Só gera o mapa depois que TUDO estiver carregado
-
-  // ─── LOADERS ───────────────────────────────────────────────────────────
-
+  await preloadChunkModels();
+  await preloadAlvo();
+  updateChunks();
   loadModel();
   loadPistol();
-
   animate();
 }
 
@@ -784,7 +725,7 @@ function loadModel() {
         projectileBody.updateMassProperties();
     }
 
-    // ← substitui o bloco do alvo pelo novo
+    // substitui o bloco do alvo pelo novo
     if (e.body.isAlvo && !e.body.jaFoiAcertado) {
         e.body.jaFoiAcertado = true;
         hitAlvo = true;
@@ -825,10 +766,7 @@ function loadModel() {
                 child.material.color.setHex(0x00ff00);
             }
         });
-
-        console.log("🎯 ALVO ABATIDO!");
     }
-
 });
 
       world.addBody(projectileBody);
@@ -842,28 +780,10 @@ function animate() {
   requestAnimationFrame(animate);
 
   const delta = clock.getDelta();
-  
-  // ─────────────────────────────────────────────
-  // STEP FÍSICO
-  // ─────────────────────────────────────────────
-
   world.step(1 / 60, delta, 10);
   updateChunks();
-
-  // ─────────────────────────────────────────────
-  // PROJÉTIL
-  // ─────────────────────────────────────────────
-
   if (projectile && projectileBody) {
-    // posição física normal
-    // SEM smoothing na bala
-
     projectile.position.copy(projectileBody.position);
-
-    // ─────────────────────────────────────────
-    // ROTAÇÃO EM VOO
-    // ─────────────────────────────────────────
-
     if (!hasBounced) {
       const velocityVector = new THREE.Vector3(
         projectileBody.velocity.x,
@@ -873,24 +793,13 @@ function animate() {
 
       if (velocityVector.lengthSq() > 0.0001) {
         const tempLooker = new THREE.Object3D();
-
         tempLooker.position.copy(projectile.position);
-
         tempLooker.lookAt(projectile.position.clone().add(velocityVector));
-
         tempLooker.rotateY(-Math.PI / 2);
-
-        // VISUAL acompanha física
-
         projectile.quaternion.copy(tempLooker.quaternion);
-
-        // mantém física original
-
         projectileBody.quaternion.copy(tempLooker.quaternion);
       }
     } else {
-      // após ricochete
-
       projectile.quaternion.copy(projectileBody.quaternion);
     }
   }
@@ -964,8 +873,6 @@ function animate() {
 }
   else if (cameraTarget === "alvo" && posicaoAlvoAcertado) {
     if (crosshair) crosshair.style.visibility = "hidden";
-
-    // Posição cinematográfica: lateral e levemente acima do alvo
     const destino = new THREE.Vector3(
         posicaoAlvoAcertado.x + 15,
         posicaoAlvoAcertado.y + 5,
@@ -986,14 +893,14 @@ function animate() {
             }
             isFiring = false;
             cameraTarget = "pistol";
-        }, 2000); // 2 segundos contemplando o alvo
+        }, 2000);
     }
 }
 
   if (projectile.visible) {
     if (!hasBounced || window.graficoComQuique) {
     trajectoryTimer += delta;
-    if (trajectoryTimer >= 0.25) { // coleta a cada 0.25s
+    if (trajectoryTimer >= 0.25) {
       trajectoryTimer = 0;
       const spd = new THREE.Vector3(
         projectileBody.velocity.x,
@@ -1028,8 +935,6 @@ document.addEventListener("mousemove", (e) => {
   if (document.pointerLockElement === renderer.domElement && !isFiring && cameraTarget === "pistol") {
     
     pitch -= e.movementY * sensitivity;
-
-    //ângulo -20 a 60
     pitch = Math.max(
       -20 * (Math.PI / 180),
       Math.min(60 * (Math.PI / 180), pitch),
@@ -1038,11 +943,8 @@ document.addEventListener("mousemove", (e) => {
     config.angle = parseFloat((pitch * (180 / Math.PI)).toFixed(1));
     
   } else if (document.pointerLockElement === renderer.domElement && cameraTarget === "bullet") {
-    // Gira a câmera em volta da bala
     bulletYaw -= e.movementX * sensitivity;
     bulletPitch += e.movementY * sensitivity;
-
-    // Limita o pitch para a câmera não virar de cabeça para baixo
     bulletPitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, bulletPitch));
   }
 });
@@ -1119,12 +1021,8 @@ window.addEventListener("mousedown", (e) => {
     const direction = new THREE.Vector3()
       .subVectors(targetPoint, spawnPosition)
       .normalize();
-
-    console.log(direction);
-
-    // A câmera é posicionada nas costas da bala
     bulletYaw = Math.atan2(-direction.x, -direction.z); 
-    bulletPitch = 0.2; // Leve inclinada pra cima
+    bulletPitch = 0.2;
 
     projectileBody.velocity.set(
       direction.x * config.v0,
@@ -1233,7 +1131,6 @@ updateChunks();
     }
 
     // Reset de estado
-    
     isFiring = false;
     hasBounced = false;
     cameraTarget = "pistol";
@@ -1303,14 +1200,10 @@ window.recarregarChunks = function () {
 
     activeChunks.forEach(chunk => {
         if (!chunk.userData.bodies) return;
-
         chunk.userData.bodies.forEach(body => {
-            // Mostra ou esconde o visual
             if (body.meshVisual) {
                 body.meshVisual.visible = mostrar;
             }
-
-            // Remove ou adiciona a física
             if (mostrar) {
                 if (!world.bodies.includes(body)) {
                     world.addBody(body);
