@@ -590,8 +590,6 @@ async function init() {
 
   // ─── SISTEMA PROCEDURAL ────────────────────────────────────────────────
 
-  // ─── SISTEMA PROCEDURAL ────────────────────────────────────────────────
-
   await preloadChunkModels(); // Carrega o chão e árvores (sua função original)
   await preloadAlvo();        // Carrega o alvo (a função nova)
 
@@ -779,7 +777,7 @@ function loadModel() {
       projectileBody.ccdIterations = 10;
 
       // Sensor de Colisão Único
-projectileBody.addEventListener("collide", (e) => {
+    projectileBody.addEventListener("collide", (e) => {
 
     // chão
     if (e.body === groundBody && !hasBounced) {

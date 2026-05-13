@@ -55,14 +55,11 @@ export function iniciarInterface(config, world, setCameraModo) {
     
     // Adicionamos o .onChange na gravidade para atualizar o mundo físico na hora
     pastaFisica.add(config, 'gravity', 0, 20).name('Gravidade (m/s²)').step(0.1).onChange(v => {
-        if(world) world.gravity.set(0, -v, 0);
+        if (world) world.gravity.set(0, -v, 0);
     });
-    
-    pastaFisica.add(config, 'wind', -20, 20).name('Vento (m/s)').step(1);
 
-    const pastaVisual = gui.addFolder('Visualização');
-    
-    // Objeto temporário para as opções que não existem no config dele
+    const pastaVisual = gui.addFolder('Opções');
+
     const extras = {
         tipoProjetil: 'Pistola',
         corRastro: '#ffffff',
@@ -74,11 +71,11 @@ export function iniciarInterface(config, world, setCameraModo) {
     window.plotarGrafico = true;
 
     pastaVisual.add(extras, 'plotarGrafico').name('Plotar Gráfico').onChange(val => {
-    window.plotarGrafico = val;
+        window.plotarGrafico = val;
     });
     pastaVisual.add(extras, 'Alvos').name('Alvos').onChange(val => {
-    window.Alvos = val;
-    if (window.recarregarChunks) window.recarregarChunks();
+        window.Alvos = val;
+        if (window.recarregarChunks) window.recarregarChunks();
     });
 
     const acoes = {
