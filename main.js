@@ -1204,6 +1204,28 @@ iniciarInterface(config, world, (modo) => {
 window.forcarResetDaCena = function () {
     document.exitPointerLock();
 
+for (let i = activeChunks.length - 1; i >= 0; i--) {
+    const chunk = activeChunks[i];
+    scene.remove(chunk);
+    if (chunk.userData.bodies) {
+        chunk.userData.bodies.forEach(body => {
+            world.removeBody(body);
+            if (body.helperMesh) scene.remove(body.helperMesh);
+        });
+    }
+    chunk.traverse((child) => {
+        if (!child.isMesh) return;
+        child.geometry?.dispose();
+        if (Array.isArray(child.material)) {
+            child.material.forEach(m => m.dispose());
+        } else {
+            child.material?.dispose();
+        }
+    });
+    activeChunks.splice(i, 1);
+}
+updateChunks();
+
     // Limpa todos os timers
     if (window.returnTimer) {
         clearTimeout(window.returnTimer);
