@@ -73,9 +73,6 @@ export function iniciarInterface(config, world, setCameraModo) {
     window.Alvos = true;
     window.plotarGrafico = true;
 
-    pastaVisual.add(extras, 'modoCamera', ['Livre', 'Lateral']).name('Modo de Câmera').onChange(val => {
-        setCameraModo(val);
-    });
     pastaVisual.add(extras, 'plotarGrafico').name('Plotar Gráfico').onChange(val => {
     window.plotarGrafico = val;
     });
@@ -93,14 +90,11 @@ export function iniciarInterface(config, world, setCameraModo) {
 
         extras.tipoProjetil = 'Pistola';
         extras.corRastro = '#ffffff';
+        extras.Alvos = true;
         extras.plotarGrafico = true;
         extras.modoCamera = 'Livre';
 
         if(typeof world !== 'undefined' && world) world.gravity.set(0, -9.81, 0);
-        
-        // Se a função setCameraModo existir no seu código, pode manter:
-        if(typeof setCameraModo === 'function') setCameraModo('Livre');
-
         // ==========================================
         // Chama a ponte que arruma tudo lá no main.js
         if (typeof window.forcarResetDaCena === 'function') {

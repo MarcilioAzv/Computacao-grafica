@@ -212,12 +212,8 @@ function seedDecorations(chunkGroup) {
         const worldPosZ = chunkGroup.position.z + localZ;
 
         const corridorWidth = 30;
-        const corridorLength = 5000;
         const spawnLineX = -40;
-        const insideCorridor =
-          Math.abs(worldPosX - spawnLineX) < corridorWidth &&
-          worldPosZ > -corridorLength &&
-          worldPosZ < 100;
+        const insideCorridor = Math.abs(worldPosX - spawnLineX) < corridorWidth;
 
         if (!insideCorridor) {
           validPosition = true;
@@ -316,7 +312,11 @@ function buildChunk(chunkX, chunkZ) {
   group.userData.bodies = [];
 
 if (window.Alvos !== false && Math.abs(config.startX - worldX) < CHUNK_SIZE / 2) {
-    const distanciasAlvo = [250, 500, 1000, 1500, 2000];
+    const distanciasAlvo = [250, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000,
+    5500, 6000, 6500, 7000, 7500, 8000, 8500, 9000, 9500, 10000, 10500, 11000, 11500, 12000,
+    12500, 13000, 13500, 14000, 14500, 15000, 15500, 16000, 16500, 17000, 17500, 18000, 18500,
+    19000, 19500, 20000, 20500, 21000, 21500, 22000, 22500, 23000, 23500, 24000, 24500, 25000,
+    25500, 26000, 26500, 27000, 27500, 28000, 28500, 29000, 29500, 30000];
     const distanciasAlvos = distanciasAlvo
     .filter(d => Math.abs(-d - worldZ) < CHUNK_SIZE / 2)
     .map(d => -d);
@@ -394,15 +394,6 @@ const targetShape = new CANNON.Box(halfExtents);
 
       world.addBody(targetBody);
       group.userData.bodies.push(targetBody);
-
-      // 3. MODO RAIO-X: Acompanha 100% a física
-      const helperGeo = new THREE.BoxGeometry(larguraHitbox, alturaHitbox, profundidadeHitbox);
-      const helperMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true });
-      const helperMesh = new THREE.Mesh(helperGeo, helperMat);
-      helperMesh.position.copy(targetBody.position);
-      helperMesh.quaternion.copy(targetBody.quaternion);
-      scene.add(helperMesh);
-      targetBody.helperMesh = helperMesh;
     });
   }
   group.userData.x = chunkX;
@@ -433,18 +424,46 @@ function updateChunks() {
     const camX = Math.floor(camera.position.x / CHUNK_SIZE);
     const camZ = Math.floor(camera.position.z / CHUNK_SIZE);
 
-    for (let x = -VIEW_RADIUS; x <= VIEW_RADIUS; x++) {
-        for (let z = -10; z <= VIEW_RADIUS; z++) {
+    if (!isFiring) {
+        for (let i = activeChunks.length - 1; i >= 0; i--) {
+            const chunk = activeChunks[i];
+            const muitoAtras = chunk.userData.z > camZ + 10;
+            if (muitoAtras) {
+                scene.remove(chunk);
+                if (chunk.userData.bodies) {
+                    chunk.userData.bodies.forEach(body => {
+                        world.removeBody(body);
+                        if (body.helperMesh) scene.remove(body.helperMesh);
+                    });
+                }
+                chunk.traverse((child) => {
+                    if (!child.isMesh) return;
+                    child.geometry?.dispose();
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(m => m.dispose());
+                    } else {
+                        child.material?.dispose();
+                    }
+                });
+                activeChunks.splice(i, 1);
+            }
+        }
+    }
+
+    const raioLateral = 10;  // ← chunks pros lados (X)
+    const raioFrente = 10;  // ← chunks pra frente (Z)
+    const raioAtras = 2;    // ← chunks pra trás (Z)
+
+    for (let x = -raioLateral; x <= raioLateral; x++) {
+        for (let z = -raioFrente; z <= raioAtras; z++) {
             const targetX = camX + x;
             const targetZ = camZ + z;
 
             const exists = activeChunks.some(
-                (chunk) => chunk.userData.x === targetX && chunk.userData.z === targetZ,
+                chunk => chunk.userData.x === targetX && chunk.userData.z === targetZ
             );
 
-            if (!exists) {
-                spawnChunk(targetX, targetZ);
-            }
+            if (!exists) spawnChunk(targetX, targetZ);
         }
     }
 }
@@ -824,11 +843,6 @@ function animate() {
   // ─────────────────────────────────────────────
 
   world.step(1 / 60, delta, 10);
-
-  // ─────────────────────────────────────────────
-  // UPDATE DOS CHUNKS
-  // ─────────────────────────────────────────────
-
   updateChunks();
 
   // ─────────────────────────────────────────────
@@ -1182,20 +1196,56 @@ iniciarInterface(config, world, (modo) => {
 // ─── RESET ──────────────────────────────────────────────────────────────────
 
 window.forcarResetDaCena = function () {
-  document.exitPointerLock();
-  if (window.returnTimer) {
-    clearTimeout(window.returnTimer);
+    document.exitPointerLock();
 
-    window.returnTimer = null;
-  }
+    // Limpa todos os timers
+    if (window.returnTimer) {
+        clearTimeout(window.returnTimer);
+        window.returnTimer = null;
+    }
 
-  isFiring = false;
+    // Reset de estado
+    isFiring = false;
+    hasBounced = false;
+    cameraTarget = "pistol";
+    posicaoAlvoAcertado = null;
+    trajectorySamples = [];
+    trajectoryTimer = 0;
+    hitAlvo = false;
+    pitch = 0;
+    yaw = 0;
 
-  hasBounced = false;
+    // Reset da bala
+    if (projectileBody && projectile) {
+        projectileBody.linearDamping = 0.01;
+        projectileBody.wakeUp();
+        projectileBody.position.set(0, -100, 0);
+        projectileBody.velocity.set(0, 0, 0);
+        projectileBody.angularVelocity.set(0, 0, 0);
+        projectileBody.fixedRotation = true;
+        projectileBody.updateMassProperties();
+        projectileBody.sleep();
+        projectile.visible = false;
+    }
 
-  cameraTarget = "pistol";
+    // Resgata a pistola
+    if (pistol && camera) {
+        camera.attach(pistol);
+        pistol.position.set(2, -4, -2);
+        pistol.rotation.set(0, 0, 0);
+        pistol.visible = true;
+    }
 
-  activeChunks.forEach(chunk => {
+    // Reset da câmera
+    if (camera) {
+        camera.position.set(config.startX, config.startY, 10);
+        camera.rotation.set(0, 0, 0, "YXZ");
+        camera.userData.smoothPosition = null;
+        camera.userData.lookTarget = null;
+    }
+
+    // Reset dos alvos
+    activeChunks.forEach(chunk => {
         if (!chunk.userData.bodies) return;
         chunk.userData.bodies.forEach(body => {
             body.jaFoiAcertado = false;
@@ -1208,38 +1258,6 @@ window.forcarResetDaCena = function () {
             }
         });
     });
-
-  // RESGATA A ARMA
-
-  if (typeof pistol !== "undefined" && pistol && camera) {
-    camera.attach(pistol);
-
-    pistol.position.set(2, -4, -2);
-
-    pistol.rotation.set(0, 0, 0);
-  }
-
-  // RESET DA BALA
-
-  if (typeof projectileBody !== "undefined" && projectileBody && projectile) {
-    projectileBody.sleep();
-
-    projectileBody.position.set(0, -100, 0);
-
-    projectileBody.velocity.set(0, 0, 0);
-
-    projectileBody.angularVelocity.set(0, 0, 0);
-
-    projectile.visible = false;
-  }
-
-  // CAMERA
-
-  if (camera) {
-    camera.position.set(config.startX, config.startY, 10);
-
-    pitch = 0;
-  }
 };
 
 // ─── CONTROLE DE PITCH VIA GUI ──────────────────────────────────────────────
