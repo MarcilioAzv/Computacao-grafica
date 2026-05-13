@@ -427,7 +427,7 @@ function updateChunks() {
     if (!isFiring) {
         for (let i = activeChunks.length - 1; i >= 0; i--) {
             const chunk = activeChunks[i];
-            const muitoAtras = chunk.userData.z > camZ + 10;
+            const muitoAtras = chunk.userData.z > camZ + 8;
             if (muitoAtras) {
                 scene.remove(chunk);
                 if (chunk.userData.bodies) {
@@ -450,7 +450,7 @@ function updateChunks() {
         }
     }
 
-    const raioLateral = 10;  // ← chunks pros lados (X)
+    const raioLateral = 7;  // ← chunks pros lados (X)
     const raioFrente = 10;  // ← chunks pra frente (Z)
     const raioAtras = 2;    // ← chunks pra trás (Z)
 
@@ -769,7 +769,7 @@ function loadModel() {
         mass: 1,
         shape: new CANNON.Box(new CANNON.Vec3(1.25, 0.4, 0.4)),
         material: physicsMaterial,
-        linearDamping: 0.001,
+        linearDamping: 0.05,
         angularDamping: 0.5,
         fixedRotation: true,
         collisionFilterGroup: 1,
