@@ -67,15 +67,22 @@ export function iniciarInterface(config, world, setCameraModo) {
         tipoProjetil: 'Pistola',
         corRastro: '#ffffff',
         plotarGrafico: true,
+        Alvos: true,
         modoCamera: 'Livre'
     };
+    window.Alvos = true;
+    window.plotarGrafico = true;
 
     pastaVisual.add(extras, 'modoCamera', ['Livre', 'Lateral']).name('Modo de Câmera').onChange(val => {
         setCameraModo(val);
     });
-
-    pastaVisual.add(extras, 'tipoProjetil', ['Pistola', 'Canhão']).name('Arma');
-    pastaVisual.add(extras, 'plotarGrafico').name('Plotar Gráfico');
+    pastaVisual.add(extras, 'plotarGrafico').name('Plotar Gráfico').onChange(val => {
+    window.plotarGrafico = val;
+    });
+    pastaVisual.add(extras, 'Alvos').name('Alvos').onChange(val => {
+    window.Alvos = val;
+    if (window.recarregarChunks) window.recarregarChunks();
+    });
 
     const acoes = {
     resetar: function() {

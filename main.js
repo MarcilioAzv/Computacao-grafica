@@ -25,6 +25,7 @@ let trajectoryTimer = 0;
 let hitAlvo = false;
 let bulletYaw = 0;
 let bulletPitch = 0;
+let posicaoAlvoAcertado = null;
 const bulletRadius = 5;
 
 const flightQuaternion = new THREE.Quaternion();
@@ -314,12 +315,14 @@ function buildChunk(chunkX, chunkZ) {
   // ==========================================
   group.userData.bodies = [];
 
-  if (Math.abs(config.startX - worldX) < CHUNK_SIZE / 2) {
-
-    const distanciasAlvos = [worldZ - 100, worldZ - 200];
+if (window.Alvos !== false && Math.abs(config.startX - worldX) < CHUNK_SIZE / 2) {
+    const distanciasAlvo = [250, 500, 1000, 1500, 2000];
+    const distanciasAlvos = distanciasAlvo
+    .filter(d => Math.abs(-d - worldZ) < CHUNK_SIZE / 2)
+    .map(d => -d);
 
     distanciasAlvos.forEach(z => {
-      if (z > -80) return;
+      if (z > -10) return;
 
       // 1. VISUAL: Modelo em pé e com pivot centralizado
       let meshAlvo;
@@ -348,15 +351,10 @@ function buildChunk(chunkX, chunkZ) {
       // ==========================================
       // PAINEL COMPLETO DE CONTROLE (Tamanho, Posição e Angulação)
       // ==========================================
-      const larguraHitbox = 7.0;       // X: Estica para os lados
-      const alturaHitbox = 10.0;        // Y: Estica para cima/baixo
-      const profundidadeHitbox = 0.19;  // Z: Espessura da placa
 
       const alturaBaseNoChao = 2.5;    // Altura onde a imagem do alvo fica no jogo
-
-      const ajusteAlturaHitbox = 0;    // Sobe ou desce SÓ a física
-      const ajusteProfundidade = 0.2;  // Empurra a física pra frente ou pra trás
-
+      const ajusteAlturaHitbox = -2;    // Sobe ou desce SÓ a física
+      const ajusteProfundidade = 0.1;  // Empurra a física pra frente ou pra trás
       const grausInclinacao = -25;     // Inclinação do alvo (ex: -10 graus)
       // ==========================================
 
@@ -364,9 +362,20 @@ function buildChunk(chunkX, chunkZ) {
       meshAlvo.position.set(config.startX - worldX, alturaBaseNoChao, z - worldZ);
       group.add(meshAlvo);
 
-      // 2. FÍSICA: Usando os controles manuais
-      const halfExtents = new CANNON.Vec3(larguraHitbox / 2, alturaHitbox / 2, profundidadeHitbox / 2);
-      const targetShape = new CANNON.Box(halfExtents);
+      // Calcula o tamanho real do modelo visual
+const boxSize = new THREE.Box3().setFromObject(meshAlvo);
+const tamanho = new THREE.Vector3();
+boxSize.getSize(tamanho);
+
+// Usa o tamanho real como hitbox
+const larguraHitbox = tamanho.x * 0.85;   // reduz 20% nas laterais
+const alturaHitbox = tamanho.y * 1.50;    // reduz 20% na altura
+const profundidadeHitbox = tamanho.z * 0.5; // reduz 50% na profundidade
+
+console.log('Hitbox calculada:', larguraHitbox, alturaHitbox, profundidadeHitbox);
+
+const halfExtents = new CANNON.Vec3(larguraHitbox / 2, alturaHitbox / 2, profundidadeHitbox / 2);
+const targetShape = new CANNON.Box(halfExtents);
 
       const targetBody = new CANNON.Body({
         mass: 0,
@@ -390,12 +399,10 @@ function buildChunk(chunkX, chunkZ) {
       const helperGeo = new THREE.BoxGeometry(larguraHitbox, alturaHitbox, profundidadeHitbox);
       const helperMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, wireframe: true });
       const helperMesh = new THREE.Mesh(helperGeo, helperMat);
-
-      // Aplica os mesmos offsets e rotação do Cannon para o Three.js
-      helperMesh.position.set(config.startX - worldX, alturaBaseNoChao + ajusteAlturaHitbox, (z - worldZ) + ajusteProfundidade);
-      helperMesh.rotation.x = inclinacaoRadianos;
-
-      group.add(helperMesh);
+      helperMesh.position.copy(targetBody.position);
+      helperMesh.quaternion.copy(targetBody.quaternion);
+      scene.add(helperMesh);
+      targetBody.helperMesh = helperMesh;
     });
   }
   group.userData.x = chunkX;
@@ -423,55 +430,25 @@ function spawnChunk(chunkX, chunkZ) {
 // ─── UPDATE DOS CHUNKS ───────────────────────────────────────────────────────
 
 function updateChunks() {
-  const camX = Math.floor(camera.position.x / CHUNK_SIZE);
-  const camZ = Math.floor(camera.position.z / CHUNK_SIZE);
+    const camX = Math.floor(camera.position.x / CHUNK_SIZE);
+    const camZ = Math.floor(camera.position.z / CHUNK_SIZE);
 
-  // REMOVE CHUNKS DISTANTES
+    for (let x = -VIEW_RADIUS; x <= VIEW_RADIUS; x++) {
+        for (let z = -10; z <= VIEW_RADIUS; z++) {
+            const targetX = camX + x;
+            const targetZ = camZ + z;
 
-  for (let i = activeChunks.length - 1; i >= 0; i--) {
-    const chunk = activeChunks[i];
+            const exists = activeChunks.some(
+                (chunk) => chunk.userData.x === targetX && chunk.userData.z === targetZ,
+            );
 
-    const distX = Math.abs(chunk.userData.x - camX);
-    const distZ = Math.abs(chunk.userData.z - camZ);
-
-    if (distX > VIEW_RADIUS || distZ > VIEW_RADIUS) {
-      scene.remove(chunk);
-      if (chunk.userData.bodies) {
-        chunk.userData.bodies.forEach(body => world.removeBody(body));
-      }
-      chunk.traverse((child) => {
-        if (!child.isMesh) return;
-
-        child.geometry?.dispose();
-
-        if (Array.isArray(child.material)) {
-          child.material.forEach((m) => m.dispose());
-        } else {
-          child.material?.dispose();
+            if (!exists) {
+                spawnChunk(targetX, targetZ);
+            }
         }
-      });
-
-      activeChunks.splice(i, 1);
     }
-  }
-
-  // CRIA NOVOS CHUNKS
-
-  for (let x = -VIEW_RADIUS; x <= VIEW_RADIUS; x++) {
-    for (let z = -VIEW_RADIUS; z <= VIEW_RADIUS; z++) {
-      const targetX = camX + x;
-      const targetZ = camZ + z;
-
-      const exists = activeChunks.some(
-        (chunk) => chunk.userData.x === targetX && chunk.userData.z === targetZ,
-      );
-
-      if (!exists) {
-        spawnChunk(targetX, targetZ);
-      }
-    }
-  }
 }
+
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 
 async function init() {
@@ -588,6 +565,7 @@ async function init() {
   });
 
   groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+  groundBody.position.set(0, 0.1, 0);
 
   world.addBody(groundBody);
 
@@ -770,51 +748,64 @@ function loadModel() {
 
       projectileBody = new CANNON.Body({
         mass: 1,
-
         shape: new CANNON.Box(new CANNON.Vec3(1.25, 0.4, 0.4)),
-
         material: physicsMaterial,
-
-        linearDamping: 0.1,
+        linearDamping: 0.001,
         angularDamping: 0.5,
-
         fixedRotation: true,
-
         collisionFilterGroup: 1,
         collisionFilterMask: -1,
       });
+      projectileBody.ccdSpeedThreshold = 1;
+      projectileBody.ccdIterations = 10;
 
       // Sensor de Colisão Único
-      projectileBody.addEventListener("collide", (e) => {
+projectileBody.addEventListener("collide", (e) => {
 
-        // 1. Checa se bateu no chão
-        if (e.body === groundBody && !hasBounced) {
-          hasBounced = true;
-          projectileBody.fixedRotation = false;
-          projectileBody.updateMassProperties();
+    // chão
+    if (e.body === groundBody && !hasBounced) {
+        hasBounced = true;
+        projectileBody.fixedRotation = false;
+        projectileBody.updateMassProperties();
+    }
+
+    // ← substitui o bloco do alvo pelo novo
+    if (e.body.isAlvo && !e.body.jaFoiAcertado) {
+        e.body.jaFoiAcertado = true;
+        hitAlvo = true;
+
+        const impactSpeed = new THREE.Vector3(
+            projectileBody.velocity.x,
+            projectileBody.velocity.y,
+            projectileBody.velocity.z
+        ).length();
+
+        if (impactSpeed > 40) {
+            projectile.visible = false;
+            projectileBody.velocity.set(0, 0, 0);
+            projectileBody.angularVelocity.set(0, 0, 0);
+            projectileBody.sleep();
+            projectileBody.position.set(0, -100, 0);
+            posicaoAlvoAcertado = new THREE.Vector3(
+            e.body.position.x,
+            e.body.position.y,
+            e.body.position.z
+    );
+    cameraTarget = "alvo";
+
         }
 
-        // 2. Checa se bateu no alvo
-        if (e.body.isAlvo && !e.body.jaFoiAcertado) {
-          e.body.jaFoiAcertado = true;
-          hitAlvo = true;
-          // Percorre todas as partes do modelo 3D
-          e.body.meshVisual.traverse((child) => {
+        e.body.meshVisual.traverse((child) => {
             if (child.isMesh) {
-              // Clona o material apenas deste alvo específico para não afetar os outros
-              child.material = child.material.clone();
-
-              // Pinta de verde (você pode usar emissive se a textura for muito escura)
-              child.material.color.setHex(0x00ff00);
-
-              // Se quiser que ele brilhe no escuro quando acertar, descomente abaixo:
-              // child.material.emissive.setHex(0x00ff00);
+                child.material = child.material.clone();
+                child.material.color.setHex(0x00ff00);
             }
-          });
-          console.log("🎯 ALVO ABATIDO! Distância: " + Math.abs(e.body.position.z).toFixed(0) + " metros!");
-        }
+        });
 
-      });
+        console.log("🎯 ALVO ABATIDO!");
+    }
+
+});
 
       world.addBody(projectileBody);
 
@@ -911,111 +902,74 @@ function animate() {
   // BULLETCAM ESTABILIZADA
   // ─────────────────────────────────────────────
   else if (cameraTarget === "bullet" && projectile && projectileBody) {
-    if (pistol) pistol.visible = true;
-
+    if (pistol) pistol.visible = false;
     if (crosshair) crosshair.style.visibility = "hidden";
 
-    // ─────────────────────────────────────────
-    // DIREÇÃO DA BALA
-    // ─────────────────────────────────────────
-
-    const velocityDir = new THREE.Vector3(
-      projectileBody.velocity.x,
-      projectileBody.velocity.y,
-      projectileBody.velocity.z,
-    );
-
-    const speed = velocityDir.length();
-
-    if (speed > 0.0001) {
-      velocityDir.normalize();
-    }
-
-    // ─────────────────────────────────────────
-    // OFFSET DINÂMICO
-    // estável após ricochete
-    // ─────────────────────────────────────────
-
+    // Offset orbital direto, sem lerp
     const offsetX = bulletRadius * Math.sin(bulletYaw) * Math.cos(bulletPitch);
     const offsetY = bulletRadius * Math.sin(bulletPitch);
     const offsetZ = bulletRadius * Math.cos(bulletYaw) * Math.cos(bulletPitch);
-    
-    const bulletOffset = new THREE.Vector3(offsetX, offsetY, offsetZ);
 
-    // ─────────────────────────────────────────
-    // POSIÇÃO ALVO
-    // ─────────────────────────────────────────
+    camera.position.set(
+        projectile.position.x + offsetX,
+        projectile.position.y + offsetY,
+        projectile.position.z + offsetZ
+    );
 
-    const desiredCameraPosition = projectile.position.clone().add(bulletOffset);
-
-    // Impede a câmera de passar do chão (o void). 
-    if (desiredCameraPosition.y < 0.5) {
-      desiredCameraPosition.y = 0.5;
-    }
-
-    // ─────────────────────────────────────────
-    // SMOOTH POSITION
-    // ─────────────────────────────────────────
-
-    if (!camera.userData.smoothPosition) {
-      camera.userData.smoothPosition = desiredCameraPosition.clone();
-    }
-
-    camera.userData.smoothPosition.lerp(desiredCameraPosition, 0.2); 
-    camera.position.copy(camera.userData.smoothPosition);
+    if (camera.position.y < 0.5) camera.position.y = 0.5;
 
     camera.lookAt(projectile.position);
 
-    // ─────────────────────────────────────────
-    // LOOK TARGET SUAVIZADO
-    // ─────────────────────────────────────────
-
-    if (!camera.userData.lookTarget) {
-      camera.userData.lookTarget = projectile.position.clone();
-    }
-
-    camera.userData.lookTarget.lerp(projectile.position, 0.12);
-
-    camera.lookAt(camera.userData.lookTarget);
-
-    // ─────────────────────────────────────────
-    // FINALIZA BULLETCAM
-    // ─────────────────────────────────────────
+    // Lógica de finalização (mantém igual)
+    const speed = new THREE.Vector3(
+        projectileBody.velocity.x,
+        projectileBody.velocity.y,
+        projectileBody.velocity.z
+    ).length();
 
     if ((speed < 0.2 && hasBounced) || projectileBody.position.y < -10) {
-      if (!window.returnTimer) {
-        window.returnTimer = setTimeout(() => {
-          // Adiciona última amostra de impacto
-          const finalSpd = new THREE.Vector3(
-            projectileBody.velocity.x,
-            projectileBody.velocity.y,
-            projectileBody.velocity.z
-          ).length();
-          trajectorySamples.push({
-            t: clock.elapsedTime,
-            z: projectileBody.position.z,
-            y: Math.max(0, projectileBody.position.y),
-            spd: finalSpd
-          });
-
-          // Normaliza os tempos para começar do zero
-          if (trajectorySamples.length > 0) {
-            const t0 = trajectorySamples[0].t;
-            trajectorySamples.forEach(s => s.t -= t0);
-          }
-
-          // Mostra o relatório
-          if (window.mostrarRelatorio) {
-            window.mostrarRelatorio(trajectorySamples, hitAlvo);
-          }
-
-          isFiring = false;
-          cameraTarget = "pistol";
-          // ... resto do reset original
-        }, 1000);
-      }
+        if (!window.returnTimer) {
+            window.returnTimer = setTimeout(() => {
+                if (trajectorySamples.length > 0) {
+                    const t0 = trajectorySamples[0].t;
+                    trajectorySamples.forEach(s => s.t -= t0);
+                }
+                if (window.mostrarRelatorio) {
+                    window.mostrarRelatorio(trajectorySamples, hitAlvo);
+                }
+                isFiring = false;
+                cameraTarget = "pistol";
+            }, 1000);
+        }
     }
-  }
+}
+  else if (cameraTarget === "alvo" && posicaoAlvoAcertado) {
+    if (crosshair) crosshair.style.visibility = "hidden";
+
+    // Posição cinematográfica: lateral e levemente acima do alvo
+    const destino = new THREE.Vector3(
+        posicaoAlvoAcertado.x + 15,
+        posicaoAlvoAcertado.y + 5,
+        posicaoAlvoAcertado.z + 10
+    );
+
+    camera.position.lerp(destino, 0.05);
+    camera.lookAt(posicaoAlvoAcertado);
+
+    if (!window.returnTimer) {
+        window.returnTimer = setTimeout(() => {
+            if (trajectorySamples.length > 0) {
+                const t0 = trajectorySamples[0].t;
+                trajectorySamples.forEach(s => s.t -= t0);
+            }
+            if (window.mostrarRelatorio) {
+                window.mostrarRelatorio(trajectorySamples, hitAlvo);
+            }
+            isFiring = false;
+            cameraTarget = "pistol";
+        }, 2000); // 2 segundos contemplando o alvo
+    }
+}
 
   if (projectile.visible && !hasBounced) {
     trajectoryTimer += delta;
@@ -1116,6 +1070,13 @@ window.addEventListener("mousedown", (e) => {
     projectileBody.position.copy(spawnPosition);
 
     projectileBody.velocity.set(0, 0, 0);
+
+    trajectorySamples.push({
+    t: clock.elapsedTime,
+    z: spawnPosition.z,
+    y: spawnPosition.y,
+    spd: config.v0
+    });
 
     // ─── GIRO ALEATÓRIO ───────────────────────────────────────────────
 
@@ -1234,6 +1195,20 @@ window.forcarResetDaCena = function () {
 
   cameraTarget = "pistol";
 
+  activeChunks.forEach(chunk => {
+        if (!chunk.userData.bodies) return;
+        chunk.userData.bodies.forEach(body => {
+            body.jaFoiAcertado = false;
+            if (body.meshVisual) {
+                body.meshVisual.traverse(child => {
+                    if (child.isMesh && child.material) {
+                        child.material.color.setHex(0xffffff);
+                    }
+                });
+            }
+        });
+    });
+
   // RESGATA A ARMA
 
   if (typeof pistol !== "undefined" && pistol && camera) {
@@ -1274,4 +1249,28 @@ window.atualizarPitchPelaInterface = function (anguloEmGraus) {
     const clampado = Math.max(-20, Math.min(60, anguloEmGraus));
     pitch = clampado * (Math.PI / 180);
   }
+};
+
+window.recarregarChunks = function () {
+    const mostrar = window.Alvos !== false;
+
+    activeChunks.forEach(chunk => {
+        if (!chunk.userData.bodies) return;
+
+        chunk.userData.bodies.forEach(body => {
+            // Mostra ou esconde o visual
+            if (body.meshVisual) {
+                body.meshVisual.visible = mostrar;
+            }
+
+            // Remove ou adiciona a física
+            if (mostrar) {
+                if (!world.bodies.includes(body)) {
+                    world.addBody(body);
+                }
+            } else {
+                world.removeBody(body);
+            }
+        });
+    });
 };
