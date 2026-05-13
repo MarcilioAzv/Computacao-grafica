@@ -103,7 +103,7 @@
     const first = samples[0];
     const last = samples[samples.length - 1];
     const maxH = Math.max(...samples.map(s => s.y));
-    const totalDist = Math.abs(last.z - first.z);
+    const totalDist = Math.abs(last.z);
     const totalTime = last.t;
 
     document.getElementById('bp-distance').textContent = totalDist.toFixed(1);
