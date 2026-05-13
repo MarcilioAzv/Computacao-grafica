@@ -64,14 +64,19 @@ export function iniciarInterface(config, world, setCameraModo) {
         tipoProjetil: 'Pistola',
         corRastro: '#ffffff',
         plotarGrafico: true,
+        graficoComQuique: false,
         Alvos: true,
         modoCamera: 'Livre'
     };
     window.Alvos = true;
     window.plotarGrafico = true;
+    window.graficoComQuique = false;
 
     pastaVisual.add(extras, 'plotarGrafico').name('Plotar Gráfico').onChange(val => {
         window.plotarGrafico = val;
+    });
+    pastaVisual.add(extras, 'graficoComQuique').name('Quicar no gráfico').onChange(val => {
+    window.graficoComQuique = val;
     });
     pastaVisual.add(extras, 'Alvos').name('Alvos').onChange(val => {
         window.Alvos = val;
@@ -89,7 +94,12 @@ export function iniciarInterface(config, world, setCameraModo) {
         extras.corRastro = '#ffffff';
         extras.Alvos = true;
         extras.plotarGrafico = true;
+        extras.graficoComQuique = false;
         extras.modoCamera = 'Livre';
+
+        window.plotarGrafico = true;
+        window.graficoComQuique = false;
+        window.Alvos = true;
 
         if(typeof world !== 'undefined' && world) world.gravity.set(0, -9.81, 0);
         // ==========================================

@@ -317,10 +317,8 @@ if (window.Alvos !== false && Math.abs(config.startX - worldX) < CHUNK_SIZE / 2)
     12500, 13000, 13500, 14000, 14500, 15000, 15500, 16000, 16500, 17000, 17500, 18000, 18500,
     19000, 19500, 20000, 20500, 21000, 21500, 22000, 22500, 23000, 23500, 24000, 24500, 25000,
     25500, 26000, 26500, 27000, 27500, 28000, 28500, 29000, 29500, 30000];
-    const distanciasAlvos = distanciasAlvo
-    .filter(d => Math.abs(-d - worldZ) < CHUNK_SIZE / 2)
-    .map(d => -d);
-
+    const distanciasAlvos = distanciasAlvo.filter(d => 
+    Math.floor(d / CHUNK_SIZE) === Math.floor(-worldZ / CHUNK_SIZE)).map(d => -d);
     distanciasAlvos.forEach(z => {
       if (z > -10) return;
 
@@ -791,11 +789,20 @@ function loadModel() {
         e.body.jaFoiAcertado = true;
         hitAlvo = true;
 
+        
+
         const impactSpeed = new THREE.Vector3(
             projectileBody.velocity.x,
             projectileBody.velocity.y,
             projectileBody.velocity.z
         ).length();
+
+        trajectorySamples.push({
+            t: clock.elapsedTime,
+            z: e.body.position.z,
+            y: e.body.position.y,
+            spd: impactSpeed
+        });
 
         if (impactSpeed > 40) {
             projectile.visible = false;
@@ -983,7 +990,8 @@ function animate() {
     }
 }
 
-  if (projectile.visible && !hasBounced) {
+  if (projectile.visible) {
+    if (!hasBounced || window.graficoComQuique) {
     trajectoryTimer += delta;
     if (trajectoryTimer >= 0.25) { // coleta a cada 0.25s
       trajectoryTimer = 0;
@@ -1000,7 +1008,7 @@ function animate() {
       });
     }
   }
-
+  }
   renderer.render(scene, camera);
 }
 // ─── EVENTOS ────────────────────────────────────────────────────────────────
@@ -1203,6 +1211,7 @@ window.forcarResetDaCena = function () {
     }
 
     // Reset de estado
+    
     isFiring = false;
     hasBounced = false;
     cameraTarget = "pistol";
