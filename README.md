@@ -24,3 +24,5 @@ Three.js: Renderização gráfica, iluminação, e gerenciamento de malhas 3D.
 
 Cannon.js: Motor de física para detecção de colisões, gravidade e rigid bodies.
 <img width="1313" height="627" alt="image" src="https://github.com/user-attachments/assets/6fa663ab-84bd-4789-a2fc-679b62bfa43a" />
+<img width="1311" height="623" alt="image" src="https://github.com/user-attachments/assets/f4086f6a-9fcc-4937-b899-ea5a3f05fabf" />
+<img width="1305" height="621" alt="image" src="https://github.com/user-attachments/assets/2382f569-47ee-4f99-94bc-5af257c5788a" />
